@@ -139,6 +139,7 @@ Node reads config from `../ProjectSettings/McpUnitySettings.json` relative to **
 - `get_gameobject` — Get detailed GameObject info
 - `get_console_logs` — Retrieve Unity console logs
 - `recompile_scripts` — Recompile all project scripts
+- `refresh_assets` — Refreshes the Unity AssetDatabase to import any changed assets
 - `duplicate_gameobject` — Duplicate GameObjects with optional rename/reparent
 - `delete_gameobject` — Delete GameObjects from scene
 - `reparent_gameobject` — Change GameObject parent in hierarchy
