@@ -14,6 +14,7 @@ namespace McpUnity.Tests
     public class LoadSceneToolTests
     {
         private const string TargetScenePath = "Assets/McpUnityLoadSceneToolTestTarget.unity";
+        private const string SavedScenePath = "Assets/McpUnityLoadSceneToolTestSaved.unity";
 
         private LoadSceneTool _tool;
 
@@ -36,6 +37,28 @@ namespace McpUnity.Tests
         {
             EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             AssetDatabase.DeleteAsset(TargetScenePath);
+            AssetDatabase.DeleteAsset(SavedScenePath);
+        }
+
+        [Test]
+        public void Execute_DiscardUnsavedChanges_SavedDirtyScene_RefusesAndKeepsChanges()
+        {
+            Scene saved = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            Assert.IsTrue(EditorSceneManager.SaveScene(saved, SavedScenePath), "Failed to create saved test scene");
+            new GameObject("LoadSceneToolTests_Work");
+            EditorSceneManager.MarkSceneDirty(saved);
+
+            JObject result = _tool.Execute(new JObject
+            {
+                ["scenePath"] = TargetScenePath,
+                ["discardUnsavedChanges"] = true
+            });
+
+            Assert.IsFalse(result["success"]?.ToObject<bool>() ?? false, result.ToString());
+            Assert.AreEqual("unsaved_changes_error", result["error"]?["type"]?.ToString(), result.ToString());
+            Assert.AreEqual(SavedScenePath, SceneManager.GetActiveScene().path);
+            Assert.IsTrue(SceneManager.GetActiveScene().isDirty);
+            Assert.IsNotNull(GameObject.Find("LoadSceneToolTests_Work"));
         }
 
         [Test]

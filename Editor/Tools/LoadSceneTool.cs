@@ -15,7 +15,7 @@ namespace McpUnity.Tools
         public LoadSceneTool()
         {
             Name = "load_scene";
-            Description = "Loads a scene by path or name. Supports additive loading (default: false) and replacing throwaway open scenes without saving (discardUnsavedChanges, default: false)";
+            Description = "Loads a scene by path or name. Supports additive loading (default: false) and replacing throwaway untitled scenes without saving (discardUnsavedChanges, default: false)";
         }
 
         /// <summary>
@@ -86,6 +86,27 @@ namespace McpUnity.Tools
                         // Caller declared the open scenes throwaway (e.g. temporary scenes left by tests):
                         // OpenScene in Single mode replaces them without saving or prompting
                         discardedScenes = GetDirtyOpenScenes();
+
+                        // Only untitled scenes are considered throwaway; unsaved changes in a saved scene
+                        // may be someone's work, so refuse instead of silently discarding them
+                        var savedDirtyScenes = new System.Collections.Generic.List<string>();
+                        foreach (var scene in discardedScenes)
+                        {
+                            string path = scene["path"]?.ToString();
+                            if (!string.IsNullOrEmpty(path))
+                            {
+                                savedDirtyScenes.Add(path);
+                            }
+                        }
+                        if (savedDirtyScenes.Count > 0)
+                        {
+                            return McpUnitySocketHandler.CreateErrorResponse(
+                                $"Scene was not loaded: discardUnsavedChanges only discards untitled scenes, but these saved scenes have unsaved changes: {string.Join(", ", savedDirtyScenes)}. " +
+                                "Save them with save_scene, or load without discardUnsavedChanges to save all open scenes",
+                                "unsaved_changes_error"
+                            );
+                        }
+
                         if (discardedScenes.Count > 0)
                         {
                             McpLogger.LogInfo($"Discarding unsaved changes in {discardedScenes.Count} scene(s) before loading '{scenePath}'");
