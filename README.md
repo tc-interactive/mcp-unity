@@ -447,6 +447,18 @@ MCP_UNITY_ALLOW_BATCH_MODE=true Unity -batchmode -nographics -projectPath /path/
 
 The Unity-side WebSocket server starts normally when opted in, but it never runs `npm install` or `npm run build` in batch mode. Ensure the Node bridge is already built and available to the MCP client.
 
+## Optional: Name Connected Clients
+
+The Server Window lists each connected bridge as `[name] id`. By default the name is the one the MCP client reports when it connects (for example `claude-code` or `codex-mcp-client`). To tell several instances of the same agent apart, set `MCP_UNITY_CLIENT_NAME` in that client's MCP configuration:
+
+```json
+"mcp-unity": {
+  "command": "node",
+  "args": ["Library/PackageCache/com.gamelovers.mcp-unity@<hash>/Server~/build/index.js"],
+  "env": { "MCP_UNITY_CLIENT_NAME": "claude-worktree-2" }
+}
+```
+
 ## Bridge Configuration Resolution
 
 The Node bridge resolves each connection value in this order: its environment variable (`UNITY_PORT`, `UNITY_HOST`, or `UNITY_REQUEST_TIMEOUT`), `MCP_UNITY_SETTINGS_PATH`, the `ProjectSettings/McpUnitySettings.json` file found above the installed package, then a file found above its working directory, and finally the defaults. Fields defined in `UserSettings/McpUnitySettings.json` beside the resolved project settings take precedence over that file (but not over environment variables). Generated MCP configurations set `MCP_UNITY_SETTINGS_PATH` and `MCP_UNITY_AUTH_TOKEN_PATH` explicitly. The bridge logs the value source and warns before falling back to defaults.

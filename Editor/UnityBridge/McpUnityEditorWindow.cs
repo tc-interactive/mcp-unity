@@ -329,17 +329,9 @@ namespace McpUnity.Unity
                     bool hasMeaningfulName = !string.IsNullOrEmpty(clientName) 
                         && !clientName.Equals("Unknown MCP Client", StringComparison.OrdinalIgnoreCase);
                     
-                    if (hasMeaningfulName)
-                    {
-                        // Show name prominently when available
-                        EditorGUILayout.LabelField(clientName, EditorStyles.boldLabel);
-                        EditorGUILayout.LabelField($"ID: {client.Key}", _connectedClientLabelStyle);
-                    }
-                    else
-                    {
-                        // Show just the ID when no meaningful name is available
-                        EditorGUILayout.LabelField($"Client: {client.Key}", EditorStyles.boldLabel);
-                    }
+                    // "[name] id" keeps several instances of the same agent apart
+                    string clientLabel = hasMeaningfulName ? $"[{clientName}] {client.Key}" : $"Client: {client.Key}";
+                    EditorGUILayout.SelectableLabel(clientLabel, _connectedClientLabelStyle, GUILayout.Height(EditorGUIUtility.singleLineHeight));
                     
                     EditorGUILayout.EndVertical();
                     EditorGUILayout.Space();
@@ -737,7 +729,8 @@ namespace McpUnity.Unity
             // Label style for text in connected client boxes (black text for contrast)
             _connectedClientLabelStyle = new GUIStyle(EditorStyles.label)
             {
-                normal = { textColor = Color.black }
+                normal = { textColor = Color.black },
+                fontStyle = FontStyle.Bold
             };
             
             // Wrapped label style for text that needs to wrap

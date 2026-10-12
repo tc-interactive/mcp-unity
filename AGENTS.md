@@ -77,6 +77,8 @@ If no valid setting is found, Node falls back to:
 - **port**: `8090`
 - **timeout**: `10s`
 
+**Client name**: Node opens the Unity connection after the MCP client's `initialized` notification (5 s fallback) and sends `X-Client-Name` = `MCP_UNITY_CLIENT_NAME` if set, else the client's reported `clientInfo.name`. The Server Window lists clients as `[name] id`.
+
 **Remote connection note**:
 - If Unity is on another machine, set `AllowRemoteConnections=true` in Unity and set `UNITY_HOST=<unity_machine_ip_or_hostname>` for the Node process.
 - Remote transport is plaintext `ws://`; restrict it to a trusted network, VPN, or SSH tunnel. Use `MCP_UNITY_AUTH_TOKEN` when the remote bridge cannot read the project token file.
