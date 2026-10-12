@@ -106,6 +106,13 @@ namespace McpUnity.Unity
                 mcpUnityServer.RestartServer();
             }
             EditorGUILayout.EndHorizontal();
+
+            if (McpUnitySettings.HasUserSettingsOverride)
+            {
+                EditorGUILayout.HelpBox(
+                    $"Local override active: {McpUnitySettings.UserSettingsPath}. Fields defined there replace the shared project settings and are saved back there.",
+                    MessageType.Info);
+            }
             
             EditorGUILayout.Space();
             

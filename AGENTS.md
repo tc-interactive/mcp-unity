@@ -12,7 +12,7 @@
 
 ### Key defaults & invariants
 - **Unity WebSocket endpoint**: `ws://localhost:8090/McpUnity` by default.
-- **Config file**: `ProjectSettings/McpUnitySettings.json` (written/read by Unity; read opportunistically by Node).
+- **Config file**: `ProjectSettings/McpUnitySettings.json` (written/read by Unity; read opportunistically by Node), with an optional local, git-ignored override in `UserSettings/McpUnitySettings.json`.
 - **Authentication token**: `Library/McpUnity/bridge-token` (256-bit hex secret; never commit or copy into project settings).
 - **Handshake security**: clients authenticate as `mcp-unity:<token>` with HTTP Basic and must omit `Origin`; every supplied Origin is rejected.
 - **Execution thread**: Tool/resource execution is dispatched via `EditorCoroutineUtility` and runs on the **Unity main thread**. Keep synchronous work short; use async patterns for long work.
@@ -62,6 +62,8 @@ Node resolves bridge configuration in this order:
 - explicit environment values: `UNITY_PORT`, `UNITY_HOST`, `UNITY_REQUEST_TIMEOUT`;
 - `MCP_UNITY_SETTINGS_PATH` when set;
 - `ProjectSettings/McpUnitySettings.json` discovered above the installed Node module, then above the current working directory.
+
+Fields defined in `UserSettings/McpUnitySettings.json` beside the resolved project settings override that file (environment values still win). Unity applies the same override in `McpUnitySettings.LoadSettings()` and saves overridden fields back to it, so local values never reach the shared, versioned file. Keep both sides' override logic in sync.
 
 Node resolves authentication separately and fails closed in this order:
 - `MCP_UNITY_AUTH_TOKEN`;

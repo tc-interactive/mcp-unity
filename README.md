@@ -409,6 +409,18 @@ By default, the WebSocket server runs on port '8090'. To change it:
 
 The Node bridge discovers that project settings file from its installed package path, so it does not depend on the MCP client's working directory. To override it for one Node process, set `UNITY_PORT`, for example: `UNITY_PORT=9001 node build/index.js`.
 
+## Optional: Local Settings Override
+
+`ProjectSettings/McpUnitySettings.json` is usually committed and shared by the team. To use a different value only on your machine (for example, another port), create `UserSettings/McpUnitySettings.json` with just the fields to override:
+
+```json
+{
+    "Port": 8091
+}
+```
+
+Unity's standard `.gitignore` already excludes `UserSettings/`, so the override stays local. Both Unity and the Node bridge apply it on top of the project settings. While it exists, changes made in the Server Window to overridden fields are saved to the override, and the shared file keeps its own values. Restart Unity's MCP server and the Node bridge after creating or editing the file by hand.
+
 ## Optional: Set Timeout
 
 By default, the timeout between the MCP server and the WebSocket is 10 seconds.
@@ -437,7 +449,7 @@ The Unity-side WebSocket server starts normally when opted in, but it never runs
 
 ## Bridge Configuration Resolution
 
-The Node bridge resolves each connection value in this order: its environment variable (`UNITY_PORT`, `UNITY_HOST`, or `UNITY_REQUEST_TIMEOUT`), `MCP_UNITY_SETTINGS_PATH`, the `ProjectSettings/McpUnitySettings.json` file found above the installed package, then a file found above its working directory, and finally the defaults. Generated MCP configurations set `MCP_UNITY_SETTINGS_PATH` and `MCP_UNITY_AUTH_TOKEN_PATH` explicitly. The bridge logs the value source and warns before falling back to defaults.
+The Node bridge resolves each connection value in this order: its environment variable (`UNITY_PORT`, `UNITY_HOST`, or `UNITY_REQUEST_TIMEOUT`), `MCP_UNITY_SETTINGS_PATH`, the `ProjectSettings/McpUnitySettings.json` file found above the installed package, then a file found above its working directory, and finally the defaults. Fields defined in `UserSettings/McpUnitySettings.json` beside the resolved project settings take precedence over that file (but not over environment variables). Generated MCP configurations set `MCP_UNITY_SETTINGS_PATH` and `MCP_UNITY_AUTH_TOKEN_PATH` explicitly. The bridge logs the value source and warns before falling back to defaults.
 
 ## Bridge Security and Package Installation
 

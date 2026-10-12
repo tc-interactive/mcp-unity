@@ -80,6 +80,75 @@ describe('Unity connection configuration', () => {
     expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('source: UNITY_PORT'));
   });
 
+  async function writeUserSettings(projectRoot: string, content: string): Promise<string> {
+    const userSettingsPath = path.join(projectRoot, 'UserSettings', 'McpUnitySettings.json');
+    await fs.mkdir(path.dirname(userSettingsPath), { recursive: true });
+    await fs.writeFile(userSettingsPath, content, 'utf8');
+    return userSettingsPath;
+  }
+
+  it('applies fields from the UserSettings override over project settings', async () => {
+    const projectRoot = path.join(temporaryDirectory, 'Project');
+    await writeSettings(projectRoot, { Port: 9001, RequestTimeoutSeconds: 20 });
+    await writeUserSettings(projectRoot, JSON.stringify({ Port: 9101 }));
+    const logger = createLogger();
+
+    const config = await resolveUnityConnectionConfig(logger, {
+      cwd: path.join(temporaryDirectory, 'unrelated-client-directory'),
+      modulePath: path.join(projectRoot, 'Library', 'PackageCache', 'package', 'Server~', 'build', 'unity', 'mcpUnity.js'),
+      environment: {}
+    });
+
+    expect(config).toMatchObject({ port: 9101, requestTimeout: 20000 });
+    expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('source: UserSettings override'));
+  });
+
+  it('applies the UserSettings override beside an explicit settings path', async () => {
+    const projectRoot = path.join(temporaryDirectory, 'Project');
+    const settingsPath = await writeSettings(projectRoot, { Port: 9001 });
+    await writeUserSettings(projectRoot, JSON.stringify({ Port: 9102 }));
+    const logger = createLogger();
+
+    const config = await resolveUnityConnectionConfig(logger, {
+      cwd: path.join(temporaryDirectory, 'unrelated-client-directory'),
+      modulePath: path.join(temporaryDirectory, 'global-server', 'build', 'unity', 'mcpUnity.js'),
+      environment: { MCP_UNITY_SETTINGS_PATH: settingsPath }
+    });
+
+    expect(config).toMatchObject({ port: 9102, settingsPath });
+  });
+
+  it('prefers explicit environment values over the UserSettings override', async () => {
+    const projectRoot = path.join(temporaryDirectory, 'Project');
+    await writeSettings(projectRoot, { Port: 9001 });
+    await writeUserSettings(projectRoot, JSON.stringify({ Port: 9101 }));
+    const logger = createLogger();
+
+    const config = await resolveUnityConnectionConfig(logger, {
+      cwd: projectRoot,
+      modulePath: path.join(temporaryDirectory, 'global-server', 'build', 'unity', 'mcpUnity.js'),
+      environment: { UNITY_PORT: '9201' }
+    });
+
+    expect(config).toMatchObject({ port: 9201 });
+  });
+
+  it('ignores an unreadable UserSettings override and keeps project settings', async () => {
+    const projectRoot = path.join(temporaryDirectory, 'Project');
+    await writeSettings(projectRoot, { Port: 9001 });
+    await writeUserSettings(projectRoot, '{ not json');
+    const logger = createLogger();
+
+    const config = await resolveUnityConnectionConfig(logger, {
+      cwd: projectRoot,
+      modulePath: path.join(temporaryDirectory, 'global-server', 'build', 'unity', 'mcpUnity.js'),
+      environment: {}
+    });
+
+    expect(config).toMatchObject({ port: 9001 });
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('UserSettings override'));
+  });
+
   it('uses an explicit settings path before module and cwd discovery', async () => {
     const firstProject = path.join(temporaryDirectory, 'first-project');
     const secondProject = path.join(temporaryDirectory, 'second-project');
