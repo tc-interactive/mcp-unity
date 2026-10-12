@@ -4,7 +4,8 @@
 #   <upstream version>-tci-<short commit hash>   e.g. 1.5.0-tci-0a379a4
 #
 # The tag points to a release commit (child of the stable commit, never pushed to a branch)
-# whose package.json carries that version, so Unity's Package Manager shows it when installed via:
+# carrying that version in the package manifests, the MCP server metadata and the Unity Server Window
+# (see .github/scripts/stamp-version.mjs), so it shows up everywhere when installed via:
 #   "com.gamelovers.mcp-unity": "https://github.com/tc-interactive/mcp-unity.git#1.5.0-tci-0a379a4"
 name: Release stable
 
@@ -77,10 +78,11 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # Stamp only the version line to keep the file's formatting and line endings
-          for file in package.json Server~/package.json; do
-            sed -i -E "0,/\"version\": \"[^\"]+\"/s//\"version\": \"$VERSION\"/" "$file"
-          done
+          # Manifests, lockfile, MCP server/dashboard metadata and the Unity Server Window version
+          node .github/scripts/stamp-version.mjs "$VERSION"
+          git diff --stat
+          # Make sure the stamped sources still build before tagging them
+          (cd Server~ && npm run build)
           git commit -am "chore(release): $VERSION"
           git tag -a "$VERSION" -m "Release $VERSION (from stable $GITHUB_SHA)"
           git push origin "refs/tags/$VERSION"
