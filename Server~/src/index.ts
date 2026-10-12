@@ -40,6 +40,9 @@ import { registerUnityDashboardAppResource } from './resources/unityDashboardApp
 import { registerGameObjectHandlingPrompt } from './prompts/gameobjectHandlingPrompt.js';
 import { registerUnityDashboardPrompt } from './prompts/unityDashboardPrompt.js';
 
+// Fallback delay for starting the Unity bridge when the MCP client never sends 'initialized'
+const CLIENT_INITIALIZATION_TIMEOUT_MS = 5000;
+
 // Initialize loggers
 const serverLogger = new Logger('Server', LogLevel.INFO);
 const unityLogger = new Logger('Unity', LogLevel.INFO);
@@ -120,19 +123,34 @@ async function startServer() {
   try {
     // Initialize STDIO transport for MCP client communication
     const stdioTransport = new StdioServerTransport();
-    
+
+    // The client reports its name in the initialize handshake, which completes after connect() resolves.
+    // Start the Unity bridge once the client is initialized so its name reaches Unity's connected clients list.
+    let unityBridgeStarted = false;
+    const startUnityBridge = async () => {
+      if (unityBridgeStarted) return;
+      unityBridgeStarted = true;
+      clearTimeout(initializationTimeout);
+
+      // Get the client name from the MCP server
+      const clientName = server.server.getClientVersion()?.name || 'Unknown MCP Client';
+      serverLogger.info(`Connected MCP client: ${clientName}`);
+
+      // Start Unity Bridge connection with client name in headers
+      await mcpUnity.start(clientName);
+    };
+    const startUnityBridgeSafely = () => {
+      startUnityBridge().catch(error => serverLogger.error('Failed to start Unity bridge', error));
+    };
+    // Fallback for MCP clients that never send the 'initialized' notification
+    const initializationTimeout = setTimeout(startUnityBridgeSafely, CLIENT_INITIALIZATION_TIMEOUT_MS);
+    server.server.oninitialized = startUnityBridgeSafely;
+
     // Connect the server to the transport
     await server.connect(stdioTransport);
 
     serverLogger.info('MCP Server started');
-    
-    // Get the client name from the MCP server
-    const clientName = server.server.getClientVersion()?.name || 'Unknown MCP Client';
-    serverLogger.info(`Connected MCP client: ${clientName}`);
-    
-    // Start Unity Bridge connection with client name in headers
-    await mcpUnity.start(clientName);
-    
+
   } catch (error) {
     serverLogger.error('Failed to start server', error);
     process.exit(1);
