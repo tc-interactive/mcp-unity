@@ -22,7 +22,6 @@ import { registerGetPlayModeStatusTool } from './tools/getPlayModeStatusTool.js'
 import { registerSetPlayModeStatusTool } from './tools/setPlayModeStatusTool.js';
 import { registerUnloadSceneTool } from './tools/unloadSceneTool.js';
 import { registerRecompileScriptsTool } from './tools/recompileScriptsTool.js';
-import { registerRefreshAssetsTool } from './tools/refreshAssetsTool.js';
 import { registerGetGameObjectTool } from './tools/getGameObjectTool.js';
 import { registerTransformTools } from './tools/transformTools.js';
 import { registerCreateMaterialTool, registerAssignMaterialTool, registerModifyMaterialTool, registerGetMaterialInfoTool } from './tools/materialTools.js';
@@ -42,7 +41,7 @@ import { registerGameObjectHandlingPrompt } from './prompts/gameobjectHandlingPr
 import { registerUnityDashboardPrompt } from './prompts/unityDashboardPrompt.js';
 import { resolveClientName } from './utils/clientName.js';
 
-// Fallback for MCP clients that never send the 'initialized' notification
+// Fallback delay for starting the Unity bridge when the MCP client never sends 'initialized'
 const CLIENT_INITIALIZATION_TIMEOUT_MS = 5000;
 
 // Initialize loggers
@@ -91,7 +90,6 @@ registerShowUnityDashboardTool(server, toolLogger);
 registerGetScenesHierarchyTool(server, mcpUnity, toolLogger);
 registerUnloadSceneTool(server, mcpUnity, toolLogger);
 registerRecompileScriptsTool(server, mcpUnity, toolLogger);
-registerRefreshAssetsTool(server, mcpUnity, toolLogger);
 registerGetGameObjectTool(server, mcpUnity, toolLogger);
 registerTransformTools(server, mcpUnity, toolLogger);
 registerDuplicateGameObjectTool(server, mcpUnity, toolLogger);
@@ -128,13 +126,14 @@ async function startServer() {
     const stdioTransport = new StdioServerTransport();
 
     // The client reports its name in the initialize handshake, which completes after connect() resolves.
-    // Wait for it so Unity's connected clients list can show which agent this bridge belongs to.
+    // Start the Unity bridge once the client is initialized so its name reaches Unity's connected clients list.
     let unityBridgeStarted = false;
     const startUnityBridge = async () => {
       if (unityBridgeStarted) return;
       unityBridgeStarted = true;
       clearTimeout(initializationTimeout);
 
+      // MCP_UNITY_CLIENT_NAME overrides the name reported by the MCP client
       const clientName = resolveClientName(process.env, server.server.getClientVersion()?.name);
       serverLogger.info(`Connected MCP client: ${clientName}`);
 
@@ -144,6 +143,7 @@ async function startServer() {
     const startUnityBridgeSafely = () => {
       startUnityBridge().catch(error => serverLogger.error('Failed to start Unity bridge', error));
     };
+    // Fallback for MCP clients that never send the 'initialized' notification
     const initializationTimeout = setTimeout(startUnityBridgeSafely, CLIENT_INITIALIZATION_TIMEOUT_MS);
     server.server.oninitialized = startUnityBridgeSafely;
 
