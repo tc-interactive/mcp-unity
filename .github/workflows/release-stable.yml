@@ -1,0 +1,99 @@
+# Publishes a release for every push to stable.
+#
+# The version follows upstream's package.json version with a fork suffix:
+#   <upstream version>-tci-<short commit hash>   e.g. 1.5.0-tci-0a379a4
+#
+# The tag points to a release commit (child of the stable commit, never pushed to a branch)
+# whose package.json carries that version, so Unity's Package Manager shows it when installed via:
+#   "com.gamelovers.mcp-unity": "https://github.com/tc-interactive/mcp-unity.git#1.5.0-tci-0a379a4"
+name: Release stable
+
+on:
+  push:
+    branches: [stable]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-stable
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: Server~/package-lock.json
+
+      - name: Install Node server dependencies
+        working-directory: Server~
+        run: npm ci
+
+      - name: Build Node server
+        working-directory: Server~
+        run: npm run build
+
+      - name: Test Node server
+        working-directory: Server~
+        run: npm test
+
+      - name: Compute version
+        id: version
+        run: |
+          base=$(node -p "require('./package.json').version")
+          server=$(node -p "require('./Server~/package.json').version")
+          if [ "$base" != "$server" ]; then
+            echo "::error::package.json ($base) and Server~/package.json ($server) versions differ"
+            exit 1
+          fi
+          short=$(git rev-parse --short=7 HEAD)
+          version="$base-tci-$short"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/$version" >/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag $version already exists; nothing to release"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+          # Previous fork release, for the release notes range
+          previous=$(git tag --list '*-tci-*' --sort=-creatordate | head -n 1)
+          echo "previous=$previous" >> "$GITHUB_OUTPUT"
+
+      - name: Create release commit and tag
+        if: steps.version.outputs.exists == 'false'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Stamp only the version line to keep the file's formatting and line endings
+          for file in package.json Server~/package.json; do
+            sed -i -E "0,/\"version\": \"[^\"]+\"/s//\"version\": \"$VERSION\"/" "$file"
+          done
+          git commit -am "chore(release): $VERSION"
+          git tag -a "$VERSION" -m "Release $VERSION (from stable $GITHUB_SHA)"
+          git push origin "refs/tags/$VERSION"
+
+      - name: Create GitHub release
+        if: steps.version.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PREVIOUS: ${{ steps.version.outputs.previous }}
+        run: |
+          notes_args=(--generate-notes)
+          if [ -n "$PREVIOUS" ]; then
+            notes_args+=(--notes-start-tag "$PREVIOUS")
+          fi
+          gh release create "$VERSION" --verify-tag --title "$VERSION" --latest "${notes_args[@]}"
