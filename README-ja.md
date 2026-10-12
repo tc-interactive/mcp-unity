@@ -156,6 +156,12 @@ MCP Unityは、Unityの`Library/PackedCache`フォルダーをワークスペー
 - `set_play_mode_status`: `play`（開始または再開）、`pause`（一時停止の切替）、`stop`（プレイモードの終了）、`step`（1 フレーム進める）で Unity のプレイモードを操作
   > **例:** "Unity のプレイモードを開始"、"ゲームを一時停止"、または "1 フレーム進めて"
 
+- `get_version`: Node サーバーと Unity パッケージの MCP Unity バージョン（Package Manager のソースと git リビジョンを含む）と Unity エディターのバージョンを取得し、Node と Unity のバージョンが異なる場合は警告
+  > **例:** "インストールされている MCP Unity のバージョンは？"
+
+- `whoami`: この MCP クライアントの Unity への接続を識別（Server Window に表示されるクライアント名と接続 ID、リモートエンドポイント、他の接続中のクライアント）
+  > **例:** "自分はどの Unity 接続？"
+
 ### MCPサーバーリソース
 
 - `unity://menu-items`: `execute_menu_item`ツールを容易にするために、Unityエディターで利用可能なすべてのメニュー項目のリストを取得

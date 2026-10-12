@@ -156,6 +156,12 @@ MCP Unity 通过将 Unity `Library/PackedCache` 文件夹添加到您的工作�
 - `set_play_mode_status`: 使用操作 `play`（开始或继续）、`pause`（切换暂停）、`stop`（退出播放模式）、`step`（前进一帧）控制 Unity 播放模式
   > **示例提示:** "启动 Unity 播放模式"、"暂停游戏" 或 "前进一帧"
 
+- `get_version`: 获取 Node 服务器和 Unity 包的 MCP Unity 版本（包括 Package Manager 来源和 git 修订版本）以及 Unity 编辑器版本，并在 Node 与 Unity 版本不一致时发出警告
+  > **示例提示:** "安装的 MCP Unity 是哪个版本？"
+
+- `whoami`: 识别此 MCP 客户端与 Unity 的连接（Server Window 中显示的客户端名称和连接 ID、远程端点以及其他已连接的客户端）
+  > **示例提示:** "我是哪个 Unity 连接？"
+
 ### MCP 服务器资源
 
 - `unity://menu-items`: 获取 Unity 编辑器中所有可用的菜单项列表，以方便 `execute_menu_item` 工具

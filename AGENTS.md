@@ -158,6 +158,8 @@ If no valid setting is found, Node falls back to:
 - `get_scene_info` — Get active scene info and loaded scenes list
 - `get_play_mode_status` — Get Unity play mode status (isPlaying, isPaused)
 - `set_play_mode_status` — Control Unity play mode (play, pause, stop, step)
+- `get_version` — Get Node server, Unity package and Unity Editor versions (reports the Node version even when Unity is unreachable)
+- `whoami` — Identify the calling connection (client name, connection ID, endpoint) among connected clients
 - `unload_scene` — Unload scene from hierarchy
 - `get_gameobject` — Get detailed GameObject info
 - `get_console_logs` — Retrieve Unity console logs

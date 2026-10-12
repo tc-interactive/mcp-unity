@@ -249,7 +249,7 @@ namespace McpUnity.Unity
                 }
                 else if (_server.TryGetTool(method, out var tool))
                 {
-                    EditorCoroutineUtility.StartCoroutineOwnerless(ExecuteTool(tool, parameters, tcs));
+                    EditorCoroutineUtility.StartCoroutineOwnerless(ExecuteTool(tool, parameters, CreateConnectionContext(), tcs));
                 }
                 else if (_server.TryGetResource(method, out var resource))
                 {
@@ -277,6 +277,24 @@ namespace McpUnity.Unity
             }
         }
 
+        /// <summary>
+        /// Describe this connection for tools that need to know who is calling
+        /// </summary>
+        private McpConnectionContext CreateConnectionContext()
+        {
+            _server.Clients.TryGetValue(ID, out string clientName);
+            string remoteEndPoint = null;
+            try
+            {
+                remoteEndPoint = Context?.UserEndPoint?.ToString();
+            }
+            catch (Exception ex)
+            {
+                McpLogger.LogWarning($"Could not read remote endpoint for connection {ID}: {ex.Message}");
+            }
+            return new McpConnectionContext(ID, clientName, remoteEndPoint);
+        }
+
         private void CloseUntrackedConnection()
         {
             try
@@ -296,7 +314,7 @@ namespace McpUnity.Unity
         /// <summary>
         /// Execute a tool with the provided parameters
         /// </summary>
-        private IEnumerator ExecuteTool(McpToolBase tool, JObject parameters, TaskCompletionSource<JObject> tcs)
+        private IEnumerator ExecuteTool(McpToolBase tool, JObject parameters, McpConnectionContext connection, TaskCompletionSource<JObject> tcs)
         {
             try
             {
@@ -306,7 +324,7 @@ namespace McpUnity.Unity
                 }
                 else
                 {
-                    var result = tool.Execute(parameters);
+                    var result = tool.Execute(parameters, connection);
                     tcs.SetResult(result);
                 }
             }

@@ -850,6 +850,14 @@ namespace McpUnity.Unity
             GetPlayModeStatusTool getPlayModeStatusTool = new GetPlayModeStatusTool();
             _tools.Add(getPlayModeStatusTool.Name, getPlayModeStatusTool);
 
+            // Register GetVersionTool
+            GetVersionTool getVersionTool = new GetVersionTool();
+            _tools.Add(getVersionTool.Name, getVersionTool);
+
+            // Register WhoAmITool
+            WhoAmITool whoAmITool = new WhoAmITool(this);
+            _tools.Add(whoAmITool.Name, whoAmITool);
+
             // Register SetPlayModeStatusTool
             SetPlayModeStatusTool setPlayModeStatusTool = new SetPlayModeStatusTool();
             _tools.Add(setPlayModeStatusTool.Name, setPlayModeStatusTool);
