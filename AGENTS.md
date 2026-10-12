@@ -150,7 +150,7 @@ If no valid setting is found, Node falls back to:
 - `add_asset_to_scene` — Add assets to scene
 - `create_prefab` — Create prefabs with optional scripts
 - `create_scene` — Create and save new scenes
-- `load_scene` — Load scenes (single or additive)
+- `load_scene` — Load scenes (single or additive); `discardUnsavedChanges: true` replaces throwaway scenes without saving (avoids the blocking save dialog for untitled test scenes)
 - `delete_scene` — Delete scenes and remove from Build Settings
 - `save_scene` — Save current scene (with optional Save As)
 - `get_scene_info` — Get active scene info and loaded scenes list

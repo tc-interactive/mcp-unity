@@ -88,7 +88,7 @@ The following tools are available for manipulating and querying Unity scenes and
 - `create_scene`: Creates a new scene and saves it to the specified path
   > **Example prompt:** "Create a new scene called 'Level1' in the Scenes folder"
 
-- `load_scene`: Loads a scene by path or name, with optional additive loading
+- `load_scene`: Loads a scene by path or name, with optional additive loading. Non-additive loads save the open scenes first; pass `discardUnsavedChanges: true` to replace throwaway scenes (e.g. temporary scenes left by `run_tests`) without saving or showing a save dialog
   > **Example prompt:** "Load the MainMenu scene"
 
 - `delete_scene`: Deletes a scene by path or name and removes it from Build Settings
