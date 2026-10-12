@@ -9,7 +9,7 @@ const toolDescription =
   'Loads a scene by path or name. Supports additive loading (default: false). ' +
   'By default, non-additive loading saves all open scenes first, which shows a blocking "Save Scene" dialog ' +
   'for untitled scenes (e.g. temporary scenes left by run_tests). Set discardUnsavedChanges: true to replace ' +
-  'throwaway scenes without saving.';
+  'throwaway untitled scenes without saving.';
 
 const paramsSchema = z.object({
   scenePath: z.string().optional().describe("Full asset path to the scene (e.g., 'Assets/Scenes/MyScene.unity')"),
@@ -19,6 +19,8 @@ const paramsSchema = z.object({
   discardUnsavedChanges: z.boolean().optional().describe(
     'If true, open scenes are replaced WITHOUT saving and no save dialog is shown (ignored when additive). ' +
     'Use ONLY for throwaway scenes: temporary/untitled scenes left by run_tests or scenes created just for testing. ' +
+    'Only untitled scenes are discarded: if a saved scene (one with an asset path) has unsaved changes, the load ' +
+    'is refused with an error and nothing is lost; save it with save_scene first. ' +
     'NEVER use it when the open scenes contain work that must be kept: call save_scene first or leave it false. ' +
     'Default false: open scenes are saved before loading, which may show a blocking dialog for untitled scenes.'
   )
