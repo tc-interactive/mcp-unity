@@ -1,13 +1,10 @@
 import { v4 as uuidv4 } from 'uuid';
+import { fileURLToPath } from 'url';
 import { Logger } from '../utils/logger.js';
 import { McpUnityError, ErrorType } from '../utils/errors.js';
-import { promises as fs } from 'fs';
-import path from 'path';
 import { UnityConnection, ConnectionState, ConnectionStateChange, UnityConnectionConfig } from './unityConnection.js';
 import { CommandQueue, CommandQueueConfig, CommandQueueStats, QueuedCommand } from './commandQueue.js';
-
-// Top-level constant for the Unity settings JSON path
-const MCP_UNITY_SETTINGS_PATH = path.resolve(process.cwd(), './ProjectSettings/McpUnitySettings.json');
+import { resolveUnityConnectionConfig } from './unityConnectionConfig.js';
 
 interface PendingRequest {
   resolve: (value: any) => void;
@@ -66,6 +63,8 @@ export class McpUnity {
   private port: number = 8090;
   private host: string = 'localhost';
   private requestTimeout = 10000;
+  private authToken: string = '';
+  private startupError: McpUnityError | null = null;
 
   private connection: UnityConnection | null = null;
   private pendingRequests: Map<string, PendingRequest> = new Map<string, PendingRequest>();
@@ -132,6 +131,7 @@ export class McpUnity {
         host: this.host,
         port: this.port,
         requestTimeout: this.requestTimeout,
+        authToken: this.authToken,
         clientName: this.clientName,
         // Use defaults for reconnection and heartbeat from UnityConnection
       };
@@ -149,20 +149,30 @@ export class McpUnity {
 
       this.connection.on('error', (error: McpUnityError) => {
         this.logger.error(`Connection error: ${error.message}`);
+        if (error.type === ErrorType.AUTHENTICATION) {
+          this.startupError = error;
+          this.commandQueue.clear(error.message);
+        }
         // Reject pending requests on connection error
         this.rejectAllPendingRequests(error);
       });
 
       this.logger.info('Attempting to connect to Unity WebSocket...');
       await this.connection.connect();
+      this.startupError = null;
       this.logger.info('Successfully connected to Unity WebSocket');
 
       if (clientName) {
         this.logger.info(`Client identified to Unity as: ${clientName}`);
       }
     } catch (error) {
+      if (error instanceof McpUnityError && error.type === ErrorType.AUTHENTICATION) {
+        this.startupError = error;
+      }
       this.logger.warn(`Could not connect to Unity WebSocket: ${error instanceof Error ? error.message : String(error)}`);
-      this.logger.warn('Will retry connection on next request (with automatic reconnection)');
+      if (!(error instanceof McpUnityError) || error.type !== ErrorType.AUTHENTICATION) {
+        this.logger.warn('Will retry connection on next request (with automatic reconnection)');
+      }
     }
 
     return Promise.resolve();
@@ -172,20 +182,13 @@ export class McpUnity {
    * Reads our configuration file and sets parameters of the server based on them.
    */
   private async parseAndSetConfig() {
-    const config = await this.readConfigFileAsJson();
-
-    const configPort = config.Port;
-    this.port = configPort ? parseInt(configPort, 10) : 8090;
-    this.logger.info(`Using port: ${this.port} for Unity WebSocket connection`);
-
-    // Check environment variable first, then config file, then default to localhost
-    const configHost = process.env.UNITY_HOST || config.Host;
-    this.host = configHost || 'localhost';
-
-    // Initialize timeout from environment variable (in seconds; it is the same as Cline) or use default (10 seconds)
-    const configTimeout = config.RequestTimeoutSeconds;
-    this.requestTimeout = configTimeout ? parseInt(configTimeout, 10) * 1000 : 10000;
-    this.logger.info(`Using request timeout: ${this.requestTimeout / 1000} seconds`);
+    const config = await resolveUnityConnectionConfig(this.logger, {
+      modulePath: fileURLToPath(import.meta.url)
+    });
+    this.port = config.port;
+    this.host = config.host;
+    this.requestTimeout = config.requestTimeout;
+    this.authToken = config.authToken;
   }
 
   /**
@@ -326,6 +329,10 @@ export class McpUnity {
    * @param options Optional settings for the request
    */
   public async sendRequest(request: UnityRequest, options: SendRequestOptions = {}): Promise<any> {
+    if (this.startupError?.type === ErrorType.AUTHENTICATION) {
+      throw this.startupError;
+    }
+
     const { queueIfDisconnected = this.queueingEnabled, timeout } = options;
     const requestId = request.id as string || uuidv4();
     const message: UnityRequest = {
@@ -390,6 +397,11 @@ export class McpUnity {
       // Connection successful, send the request
       return this.sendRequestInternal(message, timeout);
     } catch (error) {
+      if (error instanceof McpUnityError && error.type === ErrorType.AUTHENTICATION) {
+        this.startupError = error;
+        throw error;
+      }
+
       // Connection failed - if queuing is enabled, queue the command
       if (queueIfDisconnected) {
         this.logger.debug(`Queuing command ${requestId} (${request.method}) - connection failed, will retry`);
@@ -523,19 +535,4 @@ export class McpUnity {
     };
   }
 
-  /**
-   * Read the McpUnitySettings.json file and return its contents as a JSON object.
-   * @returns a JSON object with the contents of the McpUnitySettings.json file.
-   */
-  private async readConfigFileAsJson(): Promise<any> {
-    const configPath = MCP_UNITY_SETTINGS_PATH;
-    try {
-      const content = await fs.readFile(configPath, 'utf-8');
-      const json = JSON.parse(content);
-      return json;
-    } catch (err) {
-      this.logger.debug(`McpUnitySettings.json not found or unreadable: ${err instanceof Error ? err.message : String(err)}`);
-      return {};
-    }
-  }
 }

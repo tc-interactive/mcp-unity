@@ -8,6 +8,7 @@ using McpUnity.Tools;
 using McpUnity.Resources;
 using McpUnity.Services;
 using McpUnity.Utils;
+using WebSocketSharp.Net;
 using WebSocketSharp.Server;
 using System.IO;
 using System.Net.Sockets;
@@ -41,6 +42,11 @@ namespace McpUnity.Unity
 
         private const int DelayedStartMaxAttempts = 10;
         private static readonly double[] DelayedStartRetryDelaySeconds = { 0.25d, 0.5d, 1d, 2d, 3d, 5d };
+        private const string AllowBatchModeEnvironmentVariable = "MCP_UNITY_ALLOW_BATCH_MODE";
+
+        // Connect + read budget for the post-start liveness probe. Generous enough not to trip on a
+        // busy editor, short enough that the probe thread is always gone long before the next start.
+        private const int LivenessProbeTimeoutMs = 2000;
 
         private WebSocketServer _webSocketServer;
         private CancellationTokenSource _cts;
@@ -54,6 +60,12 @@ namespace McpUnity.Unity
         private int _connectionGeneration;
         private int _activeConnectionGeneration;
 
+        // Cancelled by StopServer() so a liveness probe can never outlive the server generation
+        // it was started for. Deliberately never Disposed: the probe thread may still poll the
+        // token after replacement, a CTS without a timer holds no critical resources, and churn
+        // is bounded at one per server start.
+        private CancellationTokenSource _livenessProbeCancellation;
+
         private enum StartServerResult
         {
             Started,
@@ -64,14 +76,13 @@ namespace McpUnity.Unity
         }
 
         /// <summary>
-        /// Singleton instance accessor. Returns null in batch mode.
+        /// Singleton instance accessor. Returns null when batch mode has not explicitly enabled the server.
         /// </summary>
         public static McpUnityServer Instance
         {
             get
             {
-                // Don't create instance in batch mode to avoid hanging builds
-                if (Application.isBatchMode)
+                if (!ShouldRunInCurrentProcess())
                 {
                     return null;
                 }
@@ -160,6 +171,7 @@ namespace McpUnity.Unity
         {
             CancelScheduledStart();
             _activeConnectionGeneration = 0;
+            _livenessProbeCancellation?.Cancel();
             McpBackgroundTick.Stop();
 
             if (_webSocketServer == null)
@@ -243,14 +255,59 @@ namespace McpUnity.Unity
             return connectionGeneration == _activeConnectionGeneration && IsListening;
         }
 
+        private static bool ShouldRunInCurrentProcess()
+        {
+            if (!Application.isBatchMode)
+            {
+                return true;
+            }
+
+            string batchModeOverride = Environment.GetEnvironmentVariable(AllowBatchModeEnvironmentVariable);
+            if (IsEnabledEnvironmentFlag(batchModeOverride))
+            {
+                return true;
+            }
+
+            // Do not instantiate settings in a default batch-mode build: loading settings creates
+            // the file when absent, which would reintroduce initialization side effects in CI.
+            if (!McpUnitySettings.HasPersistedSettings)
+            {
+                return false;
+            }
+
+            return ShouldRunInCurrentProcess(
+                true,
+                McpUnitySettings.Instance.AllowBatchModeServer,
+                batchModeOverride);
+        }
+
+        /// <summary>
+        /// Determines whether the bridge is allowed to run in the current Unity process.
+        /// Batch mode remains disabled by default so cloud builds and CI keep their existing behavior.
+        /// A persistent headless host can opt in via project settings or MCP_UNITY_ALLOW_BATCH_MODE=true.
+        /// </summary>
+        private static bool ShouldRunInCurrentProcess(bool isBatchMode, bool allowBatchModeServer, string batchModeOverride)
+        {
+            if (!isBatchMode)
+            {
+                return true;
+            }
+
+            return allowBatchModeServer || IsEnabledEnvironmentFlag(batchModeOverride);
+        }
+
+        private static bool IsEnabledEnvironmentFlag(string value)
+        {
+            return string.Equals(value?.Trim(), "true", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(value?.Trim(), "1", StringComparison.Ordinal);
+        }
+
         /// <summary>
         /// Private constructor to enforce singleton pattern
         /// </summary>
         private McpUnityServer()
         {
-            // Skip all initialization in batch mode (Unity Cloud Build, CI, headless builds)
-            // The npm install/build commands can hang indefinitely without node.js available
-            if (Application.isBatchMode)
+            if (!ShouldRunInCurrentProcess())
             {
                 McpLogger.LogInfo("MCP Unity server disabled: Running in batch mode (Unity Cloud Build or CI)");
                 return;
@@ -268,7 +325,16 @@ namespace McpUnity.Unity
             EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
 
-            InstallServer();
+            // npm install/build is what made batch-mode builds hang. A headless MCP host only
+            // needs the Unity WebSocket server, so it must provide a prebuilt Node bridge itself.
+            if (!Application.isBatchMode)
+            {
+                InstallServer();
+            }
+            else
+            {
+                McpLogger.LogInfo("Skipping MCP Node server installation in batch mode.");
+            }
             InitializeServices();
             RegisterResources();
             RegisterTools();
@@ -304,9 +370,11 @@ namespace McpUnity.Unity
             WebSocketServer webSocketServer = null;
             try
             {
+                string authenticationToken = McpUnityAuthentication.GetOrCreateToken();
                 int connectionGeneration = Interlocked.Increment(ref _connectionGeneration);
                 var host = McpUnitySettings.Instance.AllowRemoteConnections ? "0.0.0.0" : "localhost";
                 webSocketServer = new WebSocketServer($"ws://{host}:{McpUnitySettings.Instance.Port}");
+                ConfigureWebSocketSecurity(webSocketServer, authenticationToken);
                 webSocketServer.Log.Output = (data, path) => { };
                 webSocketServer.AddWebSocketService("/McpUnity", () => new McpUnitySocketHandler(this, connectionGeneration));
                 webSocketServer.Start();
@@ -314,6 +382,16 @@ namespace McpUnity.Unity
                 _activeConnectionGeneration = connectionGeneration;
                 McpBackgroundTick.Start();
                 McpLogger.LogInfo($"WebSocket server started successfully on {host}:{McpUnitySettings.Instance.Port}.");
+
+                // Start() succeeding only proves the bind succeeded, not that the port is being
+                // serviced. Confirm the latter out-of-band (see the method's remarks). The probe
+                // carries this start's generation and a token cancelled on StopServer(), so a
+                // probe from a replaced server can never report against its successor.
+                _livenessProbeCancellation?.Cancel();
+                _livenessProbeCancellation = new CancellationTokenSource();
+                VerifyServerIsActuallyServing(host, McpUnitySettings.Instance.Port,
+                    connectionGeneration, _livenessProbeCancellation.Token);
+
                 return StartServerResult.Started;
             }
             catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AddressAlreadyInUse)
@@ -339,11 +417,195 @@ namespace McpUnity.Unity
             }
         }
 
+        private static void ConfigureWebSocketSecurity(WebSocketServer webSocketServer, string authenticationToken)
+        {
+            if (webSocketServer == null)
+            {
+                throw new ArgumentNullException(nameof(webSocketServer));
+            }
+
+            if (!McpUnityAuthentication.IsValidToken(authenticationToken))
+            {
+                throw new InvalidDataException("Cannot start the MCP WebSocket server with an invalid authentication token.");
+            }
+
+            webSocketServer.AuthenticationSchemes = AuthenticationSchemes.Basic;
+            webSocketServer.Realm = McpUnityAuthentication.Realm;
+            webSocketServer.UserCredentialsFinder = identity =>
+                identity != null && string.Equals(identity.Name, McpUnityAuthentication.Username, StringComparison.Ordinal)
+                    ? new NetworkCredential(McpUnityAuthentication.Username, authenticationToken)
+                    : null;
+        }
+
         private static double GetDelayedStartDelaySeconds(int attempt)
         {
             int normalizedAttempt = Math.Max(attempt, 1);
             int delayIndex = Math.Min(normalizedAttempt - 1, DelayedStartRetryDelaySeconds.Length - 1);
             return DelayedStartRetryDelaySeconds[delayIndex];
+        }
+
+        /// <summary>
+        /// Confirms out-of-band that the port just bound is actually being serviced.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// A successful <c>WebSocketServer.Start()</c> proves only that the bind succeeded. On
+        /// Windows it is possible to end up bound to a port that then accepts TCP connections and
+        /// never answers them, so the editor reports a healthy server while every client hangs.
+        /// Reported as issue #141 ("Port N is already in use", cleared only by restarting Unity).
+        /// </para>
+        /// <para>
+        /// Silence with the connection held open is the distinguishing signature: a healthy server
+        /// either answers or closes the socket. So "data received" AND "peer closed" both count as
+        /// alive, and only a read TIMEOUT counts as dead - <see cref="IOException"/> alone does
+        /// not: <c>NetworkStream.Read</c> also raises it for connection resets and aborted
+        /// sockets (an ordinary shutdown/restart race), so the inner
+        /// <see cref="SocketException"/> is inspected and only <see cref="SocketError.TimedOut"/>
+        /// triggers the dead-server report. Other socket failures stay silent, matching the
+        /// no-connect case below: ambiguous evidence never raises the severe diagnostic.
+        /// </para>
+        /// <para>
+        /// The probe is tied to the server generation that launched it: it carries that
+        /// generation plus a token cancelled by <c>StopServer()</c>, and re-checks both before
+        /// every side effect - so a probe that slept or blocked in <c>Read</c> across a server
+        /// replacement exits silently instead of reporting a stale verdict against a healthy
+        /// successor.
+        /// </para>
+        /// <para>
+        /// This only DETECTS and reports the condition; it deliberately does not try to repair it.
+        /// The message therefore describes what was observed rather than asserting a cause.
+        /// </para>
+        /// <para>
+        /// Every resolved address must be tried. Binding "localhost" can yield an IPv6-only
+        /// listener (::1), against which 127.0.0.1 is refused - so a default <c>new TcpClient()</c>
+        /// (which is IPv4) cannot reach a perfectly healthy server and would false-alarm.
+        /// </para>
+        /// <para>
+        /// Runs off the main thread, and uses a deliberately non-existent path so it can never
+        /// create a /McpUnity session. Only LogWarning/LogError are called from the worker.
+        /// </para>
+        /// </remarks>
+        private void VerifyServerIsActuallyServing(string host, int port, int connectionGeneration,
+            CancellationToken cancellation)
+        {
+            var probeHost = host == "0.0.0.0" ? "localhost" : host;
+
+            // True while the server generation this probe was launched for is still the active
+            // one and no stop has been requested. Checked before every side effect: a stale
+            // probe must exit silently, never report against a replacement server.
+            bool ProbeIsCurrent() =>
+                !cancellation.IsCancellationRequested &&
+                Volatile.Read(ref _activeConnectionGeneration) == connectionGeneration;
+
+            var probe = new Thread(() =>
+            {
+                try
+                {
+                    // Let the accept loop settle; Start() can return marginally early. The wait
+                    // doubles as the cancellation point for a stop during the settle window.
+                    if (cancellation.WaitHandle.WaitOne(250))
+                    {
+                        return;
+                    }
+
+                    System.Net.IPAddress[] addresses;
+                    try
+                    {
+                        addresses = System.Net.Dns.GetHostAddresses(probeHost);
+                    }
+                    catch
+                    {
+                        return;
+                    }
+
+                    foreach (var address in addresses)
+                    {
+                        if (!ProbeIsCurrent())
+                        {
+                            return;
+                        }
+
+                        using (var client = new TcpClient(address.AddressFamily))
+                        {
+                            try
+                            {
+                                if (!client.ConnectAsync(address, port).Wait(LivenessProbeTimeoutMs, cancellation))
+                                {
+                                    continue;
+                                }
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                return;
+                            }
+                            catch
+                            {
+                                // Refused/unreachable on this family - try the next address.
+                                continue;
+                            }
+
+                            var stream = client.GetStream();
+                            stream.ReadTimeout = LivenessProbeTimeoutMs;
+
+                            // A healthy websocket-sharp answers "HTTP/1.1 501 Not Implemented" to an
+                            // unknown path and closes, which proves the accept loop is live without
+                            // ever creating a /McpUnity session.
+                            var request = System.Text.Encoding.ASCII.GetBytes(
+                                "GET /__mcp_liveness__ HTTP/1.1\r\n" +
+                                $"Host: {probeHost}:{port}\r\n" +
+                                "Upgrade: websocket\r\n" +
+                                "Connection: Upgrade\r\n" +
+                                "Sec-WebSocket-Key: AAAAAAAAAAAAAAAAAAAAAA==\r\n" +
+                                "Sec-WebSocket-Version: 13\r\n\r\n");
+                            stream.Write(request, 0, request.Length);
+
+                            var buffer = new byte[64];
+                            try
+                            {
+                                // Returns >0 (answered) or 0 (peer closed) on a live server. A
+                                // throw is NOT proof of death by itself - see the catch below.
+                                stream.Read(buffer, 0, buffer.Length);
+                            }
+                            catch (IOException ex)
+                            {
+                                // Read() raises IOException for more than the timeout: connection
+                                // resets and aborted sockets surface here too, and those are the
+                                // signature of an ordinary shutdown/restart race, not of the
+                                // silent port (which holds the connection OPEN in silence). Only
+                                // the timeout code is the dead-server signal; everything else
+                                // stays silent, like the no-connect case below.
+                                var socketError = (ex.InnerException as SocketException)?.SocketErrorCode;
+                                if (socketError == SocketError.TimedOut && ProbeIsCurrent())
+                                {
+                                    McpLogger.LogError(
+                                        $"MCP bridge is not serving: port {port} accepted a connection but " +
+                                        "returned nothing and did not close it. Clients will hang rather than " +
+                                        "fail. Restarting the server from the Server Window may not clear " +
+                                        "this; restarting the Unity Editor does.");
+                                }
+                            }
+
+                            // One successful connect is a conclusive test either way.
+                            return;
+                        }
+                    }
+
+                    // No address accepted a connection at all. That is ambiguous - the listener may
+                    // still be settling - and the Node bridge's own connect is the authoritative
+                    // test, so stay silent rather than false-alarm.
+                }
+                catch (Exception ex)
+                {
+                    if (ProbeIsCurrent())
+                    {
+                        McpLogger.LogWarning($"MCP liveness probe failed to run: {ex.Message}");
+                    }
+                }
+            });
+
+            probe.IsBackground = true;
+            probe.Name = "McpUnity Liveness Probe";
+            probe.Start();
         }
 
         private void ScheduleStartServer(bool requireAutoStart, string reason, int attempt = 1)
@@ -430,7 +692,7 @@ namespace McpUnity.Unity
             _delayedStartEarliestTime = 0;
             _delayedStartReason = null;
 
-            if (Application.isBatchMode || _instance != this)
+            if (!ShouldRunInCurrentProcess() || _instance != this)
             {
                 return;
             }
@@ -699,9 +961,7 @@ namespace McpUnity.Unity
         [DidReloadScripts]
         private static void AfterReload()
         {
-            // Skip initialization in batch mode (Unity Cloud Build, CI, headless builds)
-            // This prevents npm commands from hanging the build process
-            if (Application.isBatchMode)
+            if (!ShouldRunInCurrentProcess())
             {
                 return;
             }
@@ -715,7 +975,7 @@ namespace McpUnity.Unity
         /// </summary>
         private static void OnEditorQuitting()
         {
-            if (Application.isBatchMode || _instance == null) return;
+            if (_instance == null) return;
             
             McpLogger.LogInfo("Editor is quitting. Ensuring server is stopped.");
             _instance.Dispose();
@@ -727,7 +987,7 @@ namespace McpUnity.Unity
         /// </summary>
         private static void OnBeforeAssemblyReload()
         {
-            if (Application.isBatchMode || _instance == null) return;
+            if (_instance == null) return;
             
             _instance.StopServer();
         }
@@ -739,7 +999,7 @@ namespace McpUnity.Unity
         /// </summary>
         private static void OnAfterAssemblyReload()
         {
-            if (Application.isBatchMode || _instance == null) return;
+            if (!ShouldRunInCurrentProcess() || _instance == null) return;
             
             if (McpUnitySettings.Instance.AutoStartServer && !_instance.IsListening)
             {
@@ -754,7 +1014,7 @@ namespace McpUnity.Unity
         /// <param name="state">The current play mode state change.</param>
         private static void OnPlayModeStateChanged(PlayModeStateChange state)
         {
-            if (Application.isBatchMode || _instance == null) return;
+            if (!ShouldRunInCurrentProcess() || _instance == null) return;
             
             switch (state)
             {
