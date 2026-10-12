@@ -518,6 +518,20 @@ export class McpUnity {
   }
 
   /**
+   * Unity WebSocket endpoint this server targets (host and port resolved at start)
+   */
+  public get endpoint(): { host: string; port: number } {
+    return { host: this.host, port: this.port };
+  }
+
+  /**
+   * Client name sent to Unity in the X-Client-Name header (empty until started)
+   */
+  public get identifiedClientName(): string {
+    return this.clientName;
+  }
+
+  /**
    * Get connection statistics
    */
   public getConnectionStats(): {

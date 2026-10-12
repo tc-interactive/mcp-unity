@@ -20,6 +20,8 @@ import { registerSaveSceneTool } from './tools/saveSceneTool.js';
 import { registerGetSceneInfoTool } from './tools/getSceneInfoTool.js';
 import { registerGetPlayModeStatusTool } from './tools/getPlayModeStatusTool.js';
 import { registerSetPlayModeStatusTool } from './tools/setPlayModeStatusTool.js';
+import { registerGetVersionTool } from './tools/getVersionTool.js';
+import { registerWhoAmITool } from './tools/whoAmITool.js';
 import { registerUnloadSceneTool } from './tools/unloadSceneTool.js';
 import { registerRecompileScriptsTool } from './tools/recompileScriptsTool.js';
 import { registerRefreshAssetsTool } from './tools/refreshAssetsTool.js';
@@ -50,12 +52,15 @@ const unityLogger = new Logger('Unity', LogLevel.INFO);
 const toolLogger = new Logger('Tools', LogLevel.INFO);
 const resourceLogger = new Logger('Resources', LogLevel.INFO);
 
+// Server identity reported to MCP clients and by get_version
+const serverInfo = {
+  name: "MCP Unity Server",
+  version: "1.5.0"
+};
+
 // Initialize the MCP server
 const server = new McpServer (
-  {
-    name: "MCP Unity Server",
-    version: "1.5.0"
-  },
+  serverInfo,
   {
     capabilities: {
       tools: {},
@@ -86,6 +91,8 @@ registerSaveSceneTool(server, mcpUnity, toolLogger);
 registerGetSceneInfoTool(server, mcpUnity, toolLogger);
 registerGetPlayModeStatusTool(server, mcpUnity, toolLogger);
 registerSetPlayModeStatusTool(server, mcpUnity, toolLogger);
+registerGetVersionTool(server, mcpUnity, toolLogger, serverInfo.version);
+registerWhoAmITool(server, mcpUnity, toolLogger);
 registerShowUnityDashboardTool(server, toolLogger);
 registerGetScenesHierarchyTool(server, mcpUnity, toolLogger);
 registerUnloadSceneTool(server, mcpUnity, toolLogger);

@@ -159,6 +159,12 @@ The following tools are available for manipulating and querying Unity scenes and
 - `set_play_mode_status`: Controls Unity play mode with actions: 'play' (start or unpause), 'pause' (toggle pause), 'stop' (exit play mode), 'step' (advance one frame)
   > **Example prompt:** "Start Unity play mode" or "Pause the game" or "Step forward one frame"
 
+- `get_version`: Gets the MCP Unity version of the Node server and the Unity package (with its Package Manager source and git revision), plus the Unity Editor version, and warns when Node and Unity differ
+  > **Example prompt:** "Which MCP Unity version is installed?"
+
+- `whoami`: Identifies this MCP client's connection to Unity: client name and connection ID as shown in the Server Window, remote endpoint, and the other connected clients
+  > **Example prompt:** "Which Unity connection am I?"
+
 ### MCP Server Resources
 
 - `unity://menu-items`: Retrieves a list of all available menu items in the Unity Editor to facilitate `execute_menu_item` tool
