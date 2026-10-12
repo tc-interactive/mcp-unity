@@ -55,7 +55,7 @@ const resourceLogger = new Logger('Resources', LogLevel.INFO);
 // Server identity reported to MCP clients and by get_version
 const serverInfo = {
   name: "MCP Unity Server",
-  version: "1.5.0"
+  version: "1.5.0-tci-97b2b7a"
 };
 
 // Initialize the MCP server
