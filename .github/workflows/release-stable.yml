@@ -3,9 +3,14 @@
 # The version follows upstream's package.json version with a fork suffix:
 #   <upstream version>-tci-<short commit hash>   e.g. 1.5.0-tci-0a379a4
 #
-# The tag points to a release commit (child of the stable commit, never pushed to a branch)
-# carrying that version in the package manifests, the MCP server metadata and the Unity Server Window
-# (see .github/scripts/stamp-version.mjs), so it shows up everywhere when installed via:
+# The tag points to a release commit (child of the stable commit) carrying that version in the
+# package manifests, the MCP server metadata and the Unity Server Window
+# (see .github/scripts/stamp-version.mjs). stable itself always keeps the base version.
+#
+# The release branch is force-moved to the latest release commit. It is written only by this
+# workflow; never commit to it. Install from it to follow releases with the full version shown:
+#   "com.gamelovers.mcp-unity": "https://github.com/tc-interactive/mcp-unity.git#release"
+# or pin an exact release by tag:
 #   "com.gamelovers.mcp-unity": "https://github.com/tc-interactive/mcp-unity.git#1.5.0-tci-0a379a4"
 name: Release stable
 
@@ -99,3 +104,18 @@ jobs:
             notes_args+=(--notes-start-tag "$PREVIOUS")
           fi
           gh release create "$VERSION" --verify-tag --title "$VERSION" --latest "${notes_args[@]}"
+
+      # Also runs when the tag already exists, so a manual run re-syncs the branch
+      - name: Move release branch
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # Never move the branch backwards: only release the current tip of stable
+          git fetch origin stable
+          if [ "$(git rev-parse origin/stable)" != "$GITHUB_SHA" ]; then
+            echo "::warning::$GITHUB_SHA is not the tip of stable; leaving the release branch unchanged"
+            exit 0
+          fi
+          commit=$(git rev-parse "refs/tags/$VERSION^{commit}")
+          git push --force origin "$commit:refs/heads/release"
+          echo "release -> $commit ($VERSION)"

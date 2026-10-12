@@ -140,6 +140,7 @@ If no valid setting is found, Node falls back to:
   - Node server `Server~/package.json` (`version`)
   - Node lockfile, MCP protocol metadata, dashboard metadata, and `McpUnitySettings.ServerVersion`
 - Rebuild Node output: `cd Server~ && npm run build`
+- Fork releases are automatic: every push to `stable` runs `.github/workflows/release-stable.yml`, which tags `<base version>-tci-<short sha>` on a stamped release commit (`.github/scripts/stamp-version.mjs`) and force-moves the CI-only `release` branch to it. `stable` keeps the base version; projects install from `#release` (or a tag) to see the full version. Never commit to `release`, and add any new version string to the stamp script.
 
 ### Available tools (current)
 - `execute_menu_item` — Execute Unity menu items
