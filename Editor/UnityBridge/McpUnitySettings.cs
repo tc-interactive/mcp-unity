@@ -1,6 +1,8 @@
 using System;
 using System.IO;
 using McpUnity.Utils;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using UnityEngine;
 using UnityEditor;
 
@@ -19,7 +21,12 @@ namespace McpUnity.Unity
         
         // Paths
         private const string SettingsPath = "ProjectSettings/McpUnitySettings.json";
-        
+
+        // Optional per-user override; UserSettings/ is excluded by Unity's standard .gitignore.
+        // Fields present here replace the shared project values and are saved back here, keeping them local.
+        // WARNING: The Node server applies the same override. See unityConnectionConfig.ts
+        public const string UserSettingsPath = "UserSettings/McpUnitySettings.json";
+
         private static McpUnitySettings _instance;
 
         [Tooltip("Port number for MCP server")]
@@ -68,6 +75,11 @@ namespace McpUnity.Unity
         internal static bool HasPersistedSettings => File.Exists(SettingsPath);
 
         /// <summary>
+        /// Returns whether a local UserSettings override file exists
+        /// </summary>
+        public static bool HasUserSettingsOverride => File.Exists(UserSettingsPath);
+
+        /// <summary>
         /// Private constructor for singleton
         /// </summary>
         private McpUnitySettings() 
@@ -93,6 +105,12 @@ namespace McpUnity.Unity
                     // Create default settings file on the first time initialization
                     SaveSettings();
                 }
+
+                // Apply the local override on top of the shared project settings
+                if (HasUserSettingsOverride)
+                {
+                    JsonUtility.FromJsonOverwrite(File.ReadAllText(UserSettingsPath), this);
+                }
             }
             catch (Exception ex)
             {
@@ -113,12 +131,45 @@ namespace McpUnity.Unity
             {
                 // Save settings to McpUnitySettings.json
                 string json = JsonUtility.ToJson(this, true);
-                File.WriteAllText(SettingsPath, json);
+                if (!HasUserSettingsOverride)
+                {
+                    File.WriteAllText(SettingsPath, json);
+                    return;
+                }
+
+                // Overridden fields go back to the local override; the rest go to the shared project file,
+                // which keeps its own values for overridden fields so local values never reach the repository
+                JObject current = JObject.Parse(json);
+                JObject userSettings = JObject.Parse(File.ReadAllText(UserSettingsPath));
+                JObject projectSettings = File.Exists(SettingsPath) ? JObject.Parse(File.ReadAllText(SettingsPath)) : new JObject();
+
+                foreach (JProperty property in current.Properties())
+                {
+                    JObject target = userSettings.ContainsKey(property.Name) ? userSettings : projectSettings;
+                    target[property.Name] = property.Value;
+                }
+
+                File.WriteAllText(UserSettingsPath, ToIndentedJson(userSettings));
+                File.WriteAllText(SettingsPath, ToIndentedJson(projectSettings));
             }
             catch (Exception ex)
             {
                 // Can't use LoggerService here as it might create circular dependency
                 Debug.LogError($"[MCP Unity] Failed to save settings: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Serializes with the same 4-space indentation as JsonUtility to avoid formatting-only diffs
+        /// </summary>
+        private static string ToIndentedJson(JObject json)
+        {
+            using (var stringWriter = new StringWriter())
+            using (var jsonWriter = new JsonTextWriter(stringWriter) { Formatting = Formatting.Indented, Indentation = 4 })
+            {
+                json.WriteTo(jsonWriter);
+                jsonWriter.Flush();
+                return stringWriter.ToString();
             }
         }
     }

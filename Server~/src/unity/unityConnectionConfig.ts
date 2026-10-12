@@ -6,6 +6,7 @@ const DEFAULT_PORT = 8090;
 const DEFAULT_HOST = 'localhost';
 const DEFAULT_REQUEST_TIMEOUT_SECONDS = 10;
 const SETTINGS_RELATIVE_PATH = path.join('ProjectSettings', 'McpUnitySettings.json');
+const USER_SETTINGS_RELATIVE_PATH = path.join('UserSettings', 'McpUnitySettings.json');
 const TOKEN_RELATIVE_PATH = path.join('Library', 'McpUnity', 'bridge-token');
 const TOKEN_PATTERN = /^[0-9a-fA-F]{64}$/;
 
@@ -41,7 +42,8 @@ export interface ResolvedUnityConnectionConfig {
 
 /**
  * Resolves the bridge connection settings from explicit process configuration,
- * then the Unity project settings file, and finally safe defaults.
+ * then the local UserSettings override, then the Unity project settings file,
+ * and finally safe defaults.
  *
  * A package-cache install keeps Server~ below the Unity project root, so
  * searching ancestors of the executing module works even when an MCP client
@@ -57,14 +59,20 @@ export async function resolveUnityConnectionConfig(
   const settingsFile = await findSettingsFile(logger, cwd, modulePath, environment);
   const settings = settingsFile?.settings ?? {};
   const settingsSource = settingsFile ? `McpUnitySettings.json (${settingsFile.path})` : 'default settings';
+  const userSettingsFile = settingsFile ? await findUserSettingsFile(logger, settingsFile.path) : undefined;
+
+  // Fields present in the per-user override replace the shared project values
+  const configuration = (name: keyof McpUnitySettingsFile) =>
+    userSettingsFile && userSettingsFile.settings[name] !== undefined
+      ? { configurationValue: userSettingsFile.settings[name], configurationSource: `UserSettings override (${userSettingsFile.path})` }
+      : { configurationValue: settings[name], configurationSource: settingsSource };
   const authentication = await resolveAuthenticationToken(logger, cwd, environment, settingsFile?.path);
 
   const port = resolveIntegerSetting({
     environment,
     environmentName: 'UNITY_PORT',
-    configurationValue: settings.Port,
+    ...configuration('Port'),
     configurationName: 'Port',
-    configurationSource: settingsSource,
     defaultValue: DEFAULT_PORT,
     isValid: value => value >= 1 && value <= 65535,
     invalidDescription: 'an integer between 1 and 65535',
@@ -74,9 +82,8 @@ export async function resolveUnityConnectionConfig(
   const host = resolveStringSetting({
     environment,
     environmentName: 'UNITY_HOST',
-    configurationValue: settings.Host,
+    ...configuration('Host'),
     configurationName: 'Host',
-    configurationSource: settingsSource,
     defaultValue: DEFAULT_HOST,
     logger
   });
@@ -84,9 +91,8 @@ export async function resolveUnityConnectionConfig(
   const timeoutSeconds = resolveIntegerSetting({
     environment,
     environmentName: 'UNITY_REQUEST_TIMEOUT',
-    configurationValue: settings.RequestTimeoutSeconds,
+    ...configuration('RequestTimeoutSeconds'),
     configurationName: 'RequestTimeoutSeconds',
-    configurationSource: settingsSource,
     defaultValue: DEFAULT_REQUEST_TIMEOUT_SECONDS,
     isValid: value => value >= DEFAULT_REQUEST_TIMEOUT_SECONDS,
     invalidDescription: `an integer of at least ${DEFAULT_REQUEST_TIMEOUT_SECONDS}`,
@@ -212,6 +218,21 @@ async function findSettingsFile(
     'Using environment overrides and/or default connection settings.'
   );
   return undefined;
+}
+
+/**
+ * Reads the optional per-user override that sits beside the project settings.
+ * UserSettings/ is excluded by Unity's standard .gitignore, so it keeps local values out of the repository.
+ */
+async function findUserSettingsFile(logger: LoggerLike, settingsPath: string): Promise<SettingsFileResult | undefined> {
+  const projectRoot = path.dirname(path.dirname(settingsPath));
+  const userSettingsPath = path.join(projectRoot, USER_SETTINGS_RELATIVE_PATH);
+  if (!await pathExists(userSettingsPath)) {
+    return undefined;
+  }
+
+  const settings = await readSettingsFile(userSettingsPath, logger, 'UserSettings override');
+  return settings ? { path: userSettingsPath, settings } : undefined;
 }
 
 async function findSettingsPathFromAncestor(startDirectory: string, excludedPaths: Set<string>): Promise<string | undefined> {
