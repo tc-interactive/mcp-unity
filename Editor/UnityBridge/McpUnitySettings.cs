@@ -13,7 +13,7 @@ namespace McpUnity.Unity
     public class McpUnitySettings
     {
         // Constants
-        public const string ServerVersion = "1.2.0";
+        public const string ServerVersion = "1.5.0";
         public const string PackageName = "com.gamelovers.mcp-unity";
         public const int RequestTimeoutMinimum = 10;
         
@@ -30,6 +30,9 @@ namespace McpUnity.Unity
         
         [Tooltip("Whether to automatically start the MCP server when Unity opens")]
         public bool AutoStartServer = true;
+
+        [Tooltip("Allow the MCP WebSocket server to run in Unity -batchmode. Node package installation is still skipped in batch mode. This is disabled by default so CI and cloud builds keep the existing behavior.")]
+        public bool AllowBatchModeServer = false;
         
         [Tooltip("Whether to show info logs in the Unity console")]
         public bool EnableInfoLogs = false;
@@ -39,6 +42,9 @@ namespace McpUnity.Unity
         
         [Tooltip("Allow connections from remote MCP bridges. When disabled, only localhost connections are allowed (default).")]
         public bool AllowRemoteConnections = false;
+
+        [Tooltip("Allow MCP clients to install Unity packages. Disabled by default because installed packages can execute Editor code.")]
+        public bool AllowPackageInstallation = false;
 
         /// <summary>
         /// Singleton instance of settings
@@ -54,6 +60,12 @@ namespace McpUnity.Unity
                 return _instance;
             }
         }
+
+        /// <summary>
+        /// Returns whether a project settings file already exists without creating one.
+        /// This lets batch-mode CI keep its no-initialization behavior unless it has explicitly opted in.
+        /// </summary>
+        internal static bool HasPersistedSettings => File.Exists(SettingsPath);
 
         /// <summary>
         /// Private constructor for singleton

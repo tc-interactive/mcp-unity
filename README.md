@@ -88,7 +88,7 @@ The following tools are available for manipulating and querying Unity scenes and
 - `create_scene`: Creates a new scene and saves it to the specified path
   > **Example prompt:** "Create a new scene called 'Level1' in the Scenes folder"
 
-- `load_scene`: Loads a scene by path or name, with optional additive loading
+- `load_scene`: Loads a scene by path or name, with optional additive loading. Non-additive loads save the open scenes first; pass `discardUnsavedChanges: true` to replace throwaway scenes (e.g. temporary scenes left by `run_tests`) without saving or showing a save dialog
   > **Example prompt:** "Load the MainMenu scene"
 
 - `delete_scene`: Deletes a scene by path or name and removes it from Build Settings
@@ -399,29 +399,55 @@ args = ["Library/PackageCache/com.gamelovers.mcp-unity@<hash>/Server~/build/inde
 > When the AI client connects to the WebSocket server, it will automatically show in the green box in the window
 
 ## Optional: Set WebSocket Port
-By default, the WebSocket server runs on port '8090'. You can change this port in two ways:
+By default, the WebSocket server runs on port '8090'. To change it:
 
 1. Open the Unity Editor
 2. Navigate to Tools > MCP Unity > Server Window
-3. Change the "WebSocket Port" value to your desired port number
-4. Unity will setup the system environment variable UNITY_PORT to the new port number
+3. Change the "Connection Port" value to your desired port number
+4. Unity persists the value in `ProjectSettings/McpUnitySettings.json`
 5. Restart the Node.js server
-6. Click again on "Start Server" to reconnect the Unity Editor web socket to the Node.js MCP Server
+
+The Node bridge discovers that project settings file from its installed package path, so it does not depend on the MCP client's working directory. To override it for one Node process, set `UNITY_PORT`, for example: `UNITY_PORT=9001 node build/index.js`.
 
 ## Optional: Set Timeout
 
 By default, the timeout between the MCP server and the WebSocket is 10 seconds.
-You can change depending on the OS you are using:
+To change it:
 
 1. Open the Unity Editor
 2. Navigate to Tools > MCP Unity > Server Window
 3. Change the "Request Timeout (seconds)" value to your desired timeout seconds
-4. Unity will setup the system environment variable UNITY_REQUEST_TIMEOUT to the new timeout value
+4. Unity persists the value in `ProjectSettings/McpUnitySettings.json`
 5. Restart the Node.js server
-6. Click again on "Start Server" to reconnect the Unity Editor web socket to the Node.js MCP Server
+
+To override it for one Node process, set `UNITY_REQUEST_TIMEOUT` (in seconds), for example: `UNITY_REQUEST_TIMEOUT=30 node build/index.js`.
 
 > [!TIP]  
 > The timeout between your AI Coding IDE (e.g., Claude Desktop, Cursor IDE, Windsurf IDE) and the MCP Server depends on the IDE.
+
+## Optional: Run a Persistent Headless MCP Host
+
+MCP Unity remains disabled in `-batchmode` by default so CI and cloud builds do not start a bridge or run npm. To run a long-lived headless Editor as an MCP host, opt in before launching Unity by either enabling **Allow Batch Mode Server** in the Server Window or setting `MCP_UNITY_ALLOW_BATCH_MODE=true`:
+
+```bash
+MCP_UNITY_ALLOW_BATCH_MODE=true Unity -batchmode -nographics -projectPath /path/to/project -logFile /path/to/unity.log
+```
+
+The Unity-side WebSocket server starts normally when opted in, but it never runs `npm install` or `npm run build` in batch mode. Ensure the Node bridge is already built and available to the MCP client.
+
+## Bridge Configuration Resolution
+
+The Node bridge resolves each connection value in this order: its environment variable (`UNITY_PORT`, `UNITY_HOST`, or `UNITY_REQUEST_TIMEOUT`), `MCP_UNITY_SETTINGS_PATH`, the `ProjectSettings/McpUnitySettings.json` file found above the installed package, then a file found above its working directory, and finally the defaults. Generated MCP configurations set `MCP_UNITY_SETTINGS_PATH` and `MCP_UNITY_AUTH_TOKEN_PATH` explicitly. The bridge logs the value source and warns before falling back to defaults.
+
+## Bridge Security and Package Installation
+
+MCP Unity creates a per-project 256-bit authentication token at `Library/McpUnity/bridge-token`. Token resolution is strict: `MCP_UNITY_AUTH_TOKEN` takes precedence, followed by `MCP_UNITY_AUTH_TOKEN_PATH`, followed by the token beside the discovered Unity project. Explicit missing or malformed values fail without fallback. Generated configurations use the token-file path and never copy the secret into `ProjectSettings`.
+
+The Unity endpoint requires HTTP Basic credentials with username `mcp-unity`, and rejects every WebSocket handshake that supplies an `Origin` header. Direct WebSocket integrations must authenticate and omit `Origin`. Use the Server Window to copy or regenerate the token; after rotation, restart all MCP client processes.
+
+The `add_package` tool is disabled by default because Unity packages can execute Editor code when they compile. Enable **Allow Package Installation** in Tools > MCP Unity > Server Window, or set `AllowPackageInstallation` to `true` in `ProjectSettings/McpUnitySettings.json`, only when package sources and MCP clients are trusted.
+
+Version 1.5.0 intentionally rejects 1.4.x Node bridges. Upgrade both the Unity and Node package components, run the Unity Configure action again if the package-cache path changed, and restart MCP clients.
 
 ## Optional: Allow Remote MCP Bridge Connections
 
@@ -433,6 +459,8 @@ By default, the WebSocket server binds to 'localhost'. To allow MCP bridge conne
 4. Unity will bind the WebSocket server to '0.0.0.0' (all interfaces)
 5. Restart the Node.js server to apply the new host configuration
 6. Set the environment variable UNITY_HOST to your Unity machine's IP address when running the MCP bridge remotely: `UNITY_HOST=192.168.1.100 node server.js`
+
+Remote transport remains unencrypted `ws://`. Authentication prevents unauthorized access but does not hide traffic; restrict remote use to a trusted network, VPN, or SSH tunnel. A remote bridge that cannot read the Unity project token file must receive `MCP_UNITY_AUTH_TOKEN` through a secure secret mechanism.
 
 ## <a name="debug-server"></a>Debugging the Server
 

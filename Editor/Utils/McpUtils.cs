@@ -44,7 +44,13 @@ namespace McpUnity.Utils
                         { "mcp-unity", new Dictionary<string, object>
                             {
                                 { "command", "node" },
-                                { "args", new[] { GetIndexJsPath(pathMode) } }
+                                { "args", new[] { GetIndexJsPath(pathMode) } },
+                                { "env", new Dictionary<string, object>
+                                    {
+                                        { "MCP_UNITY_SETTINGS_PATH", GetSettingsFilePath() },
+                                        { "MCP_UNITY_AUTH_TOKEN_PATH", GetAuthTokenFilePath() }
+                                    }
+                                }
                             }
                         }
                     }
@@ -96,7 +102,12 @@ namespace McpUnity.Utils
                                 { "type", "local" },
                                 { "enabled", true },
                                 { "command", new[] { "node", indexJsPath } },
-                                { "environment", new Dictionary<string, object>() }
+                                { "environment", new Dictionary<string, object>
+                                    {
+                                        { "MCP_UNITY_SETTINGS_PATH", GetSettingsFilePath() },
+                                        { "MCP_UNITY_AUTH_TOKEN_PATH", GetAuthTokenFilePath() }
+                                    }
+                                }
                             }
                         }
                     }
@@ -138,7 +149,23 @@ namespace McpUnity.Utils
             sb.AppendLine("[mcp_servers.mcp-unity]");
             sb.AppendLine("command = \"node\"");
             sb.AppendLine($"args = [\"{indexJsPath}\"]");
+            sb.AppendLine($"env = {{ MCP_UNITY_SETTINGS_PATH = \"{GetSettingsFilePath()}\", MCP_UNITY_AUTH_TOKEN_PATH = \"{GetAuthTokenFilePath()}\" }}");
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// Returns the project settings path used by the Node bridge. Generated configurations pass
+        /// it explicitly so the bridge cannot accidentally select another Unity project by cwd.
+        /// </summary>
+        private static string GetSettingsFilePath()
+        {
+            string projectRoot = Directory.GetParent(Application.dataPath).FullName;
+            return Path.Combine(projectRoot, "ProjectSettings", "McpUnitySettings.json").Replace("\\", "/");
+        }
+
+        private static string GetAuthTokenFilePath()
+        {
+            return McpUnityAuthentication.TokenPath.Replace("\\", "/");
         }
 
         /// <summary>
