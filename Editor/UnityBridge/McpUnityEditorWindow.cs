@@ -112,6 +112,28 @@ namespace McpUnity.Unity
                 EditorGUILayout.HelpBox(
                     $"Local override active: {McpUnitySettings.UserSettingsPath}. Fields defined there replace the shared project settings and are saved back there.",
                     MessageType.Info);
+
+                if (GUILayout.Button("Reveal Local Settings Override", GUILayout.Height(30)))
+                {
+                    EditorUtility.RevealInFinder(System.IO.Path.GetFullPath(McpUnitySettings.UserSettingsPath));
+                }
+            }
+            else if (GUILayout.Button(new GUIContent("Create Local Settings Override",
+                         $"Creates {McpUnitySettings.UserSettingsPath} (git-ignored) so the port can change on this machine without modifying the shared ProjectSettings file."),
+                         GUILayout.Height(30)))
+            {
+                if (settings.CreateUserSettingsOverride())
+                {
+                    EditorUtility.DisplayDialog("Success",
+                        $"Created {McpUnitySettings.UserSettingsPath} with the current port ({settings.Port}).\n\n" +
+                        "Port changes made here are now saved only on this machine. Add other fields to that file to override them too. " +
+                        "Restart your MCP client after changing the port so the Node bridge picks it up.",
+                        "OK");
+                }
+                else
+                {
+                    EditorUtility.DisplayDialog("Error", $"The local settings override could not be created at {McpUnitySettings.UserSettingsPath}.", "OK");
+                }
             }
             
             EditorGUILayout.Space();

@@ -160,6 +160,30 @@ namespace McpUnity.Unity
         }
 
         /// <summary>
+        /// Creates the local UserSettings override seeded with the current port, so later port changes stay local.
+        /// Returns false if the override already exists or could not be written.
+        /// </summary>
+        public bool CreateUserSettingsOverride()
+        {
+            if (HasUserSettingsOverride)
+            {
+                return false;
+            }
+
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(UserSettingsPath));
+                File.WriteAllText(UserSettingsPath, ToIndentedJson(new JObject { ["Port"] = Port }));
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[MCP Unity] Failed to create local settings override: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Serializes with the same 4-space indentation as JsonUtility to avoid formatting-only diffs
         /// </summary>
         private static string ToIndentedJson(JObject json)

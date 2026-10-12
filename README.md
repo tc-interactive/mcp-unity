@@ -411,7 +411,7 @@ The Node bridge discovers that project settings file from its installed package 
 
 ## Optional: Local Settings Override
 
-`ProjectSettings/McpUnitySettings.json` is usually committed and shared by the team. To use a different value only on your machine (for example, another port), create `UserSettings/McpUnitySettings.json` with just the fields to override:
+`ProjectSettings/McpUnitySettings.json` is usually committed and shared by the team. To use a different value only on your machine (for example, another port), click **Create Local Settings Override** in Tools > MCP Unity > Server Window (it seeds the file with the current port), or create `UserSettings/McpUnitySettings.json` by hand with just the fields to override:
 
 ```json
 {
