@@ -1,6 +1,5 @@
 using System;
 using UnityEditor;
-using UnityEngine.SceneManagement;
 using Newtonsoft.Json.Linq;
 using McpUnity.Unity;
 using McpUnity.Utils;
@@ -15,7 +14,7 @@ namespace McpUnity.Tools
         public LoadSceneTool()
         {
             Name = "load_scene";
-            Description = "Loads a scene by path or name. Supports additive loading (default: false) and replacing throwaway untitled scenes without saving (discardUnsavedChanges, default: false)";
+            Description = "Loads a scene by path or name. Supports additive loading (default: false). Non-additive loads save saved scenes with unsaved changes first; untitled scenes with unsaved changes refuse the load unless discardUnsavedChanges is true";
         }
 
         /// <summary>
@@ -78,48 +77,17 @@ namespace McpUnity.Tools
             try
             {
                 var discardedScenes = new JArray();
+                var savedScenes = new JArray();
 
                 if (!additive)
                 {
-                    if (discardUnsavedChanges)
+                    // Single mode replaces the open scenes: save the saved ones, and refuse instead of
+                    // showing a blocking Save dialog for untitled ones unless they are declared throwaway
+                    JObject refused = OpenScenesGuard.PrepareToReplace(
+                        discardUnsavedChanges, "Scene was not loaded", out discardedScenes, out savedScenes);
+                    if (refused != null)
                     {
-                        // Caller declared the open scenes throwaway (e.g. temporary scenes left by tests):
-                        // OpenScene in Single mode replaces them without saving or prompting
-                        discardedScenes = GetDirtyOpenScenes();
-
-                        // Only untitled scenes are considered throwaway; unsaved changes in a saved scene
-                        // may be someone's work, so refuse instead of silently discarding them
-                        var savedDirtyScenes = new System.Collections.Generic.List<string>();
-                        foreach (var scene in discardedScenes)
-                        {
-                            string path = scene["path"]?.ToString();
-                            if (!string.IsNullOrEmpty(path))
-                            {
-                                savedDirtyScenes.Add(path);
-                            }
-                        }
-                        if (savedDirtyScenes.Count > 0)
-                        {
-                            return McpUnitySocketHandler.CreateErrorResponse(
-                                $"Scene was not loaded: discardUnsavedChanges only discards untitled scenes, but these saved scenes have unsaved changes: {string.Join(", ", savedDirtyScenes)}. " +
-                                "Save them with save_scene, or load without discardUnsavedChanges to save all open scenes",
-                                "unsaved_changes_error"
-                            );
-                        }
-
-                        if (discardedScenes.Count > 0)
-                        {
-                            McpLogger.LogInfo($"Discarding unsaved changes in {discardedScenes.Count} scene(s) before loading '{scenePath}'");
-                        }
-                    }
-                    else if (!UnityEditor.SceneManagement.EditorSceneManager.SaveOpenScenes())
-                    {
-                        // Save open scenes before replacing them; untitled scenes may show a save dialog
-                        return McpUnitySocketHandler.CreateErrorResponse(
-                            "Failed to save open scenes (save cancelled or failed); scene was not loaded. " +
-                            "If the open scenes are throwaway, retry with 'discardUnsavedChanges': true",
-                            "scene_save_error"
-                        );
+                        return refused;
                     }
                 }
 
@@ -134,9 +102,13 @@ namespace McpUnity.Tools
                 McpLogger.LogInfo($"Loaded scene at path '{scenePath}' (additive={additive})");
 
                 string message = $"Successfully loaded scene at path '{scenePath}' (additive={additive.ToString().ToLower()})";
+                if (savedScenes.Count > 0)
+                {
+                    message += $"; saved {savedScenes.Count} scene(s) with unsaved changes first";
+                }
                 if (discardedScenes.Count > 0)
                 {
-                    message += $"; discarded unsaved changes in {discardedScenes.Count} scene(s)";
+                    message += $"; discarded unsaved changes in {discardedScenes.Count} untitled scene(s)";
                 }
 
                 return new JObject
@@ -147,7 +119,8 @@ namespace McpUnity.Tools
                     ["scenePath"] = scenePath,
                     ["additive"] = additive,
                     ["discardUnsavedChanges"] = discardUnsavedChanges,
-                    ["discardedScenes"] = discardedScenes
+                    ["discardedScenes"] = discardedScenes,
+                    ["savedScenes"] = savedScenes
                 };
             }
             catch (Exception ex)
@@ -157,27 +130,6 @@ namespace McpUnity.Tools
                     "scene_load_error"
                 );
             }
-        }
-
-        /// <summary>
-        /// Lists the open scenes with unsaved changes (name and path; path is empty for untitled scenes)
-        /// </summary>
-        private static JArray GetDirtyOpenScenes()
-        {
-            var dirtyScenes = new JArray();
-            for (int i = 0; i < SceneManager.sceneCount; i++)
-            {
-                Scene scene = SceneManager.GetSceneAt(i);
-                if (scene.isDirty)
-                {
-                    dirtyScenes.Add(new JObject
-                    {
-                        ["name"] = scene.name,
-                        ["path"] = scene.path
-                    });
-                }
-            }
-            return dirtyScenes;
         }
     }
 }

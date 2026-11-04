@@ -15,7 +15,7 @@ namespace McpUnity.Tools
         public CreateSceneTool()
         {
             Name = "create_scene";
-            Description = "Creates a new scene and saves it to the specified path";
+            Description = "Creates a new scene and saves it to the specified path. Replaces the open scenes: saved scenes with unsaved changes are saved first; untitled scenes with unsaved changes refuse the call unless discardUnsavedChanges is true";
         }
 
         /// <summary>
@@ -29,6 +29,7 @@ namespace McpUnity.Tools
             string folderPath = parameters["folderPath"]?.ToObject<string>();
             bool addToBuildSettings = parameters["addToBuildSettings"]?.ToObject<bool?>() ?? false;
             bool makeActive = parameters["makeActive"]?.ToObject<bool?>() ?? true;
+            bool discardUnsavedChanges = parameters["discardUnsavedChanges"]?.ToObject<bool?>() ?? false;
 
             if (string.IsNullOrEmpty(sceneName))
             {
@@ -68,6 +69,15 @@ namespace McpUnity.Tools
 
             try
             {
+                // NewScene in Single mode replaces the open scenes: save the saved ones, and refuse instead of
+                // losing untitled ones unless they are declared throwaway
+                JObject refused = OpenScenesGuard.PrepareToReplace(
+                    discardUnsavedChanges, "Scene was not created", out JArray discardedScenes, out JArray savedScenes);
+                if (refused != null)
+                {
+                    return refused;
+                }
+
                 var newScene = UnityEditor.SceneManagement.EditorSceneManager.NewScene(UnityEditor.SceneManagement.NewSceneSetup.DefaultGameObjects, UnityEditor.SceneManagement.NewSceneMode.Single);
 
                 bool saved = UnityEditor.SceneManagement.EditorSceneManager.SaveScene(newScene, scenePath);
@@ -95,12 +105,24 @@ namespace McpUnity.Tools
 
                 McpLogger.LogInfo($"Created scene '{sceneName}' at path '{scenePath}'");
 
+                string message = $"Successfully created scene '{sceneName}' at path '{scenePath}'";
+                if (savedScenes.Count > 0)
+                {
+                    message += $"; saved {savedScenes.Count} scene(s) with unsaved changes first";
+                }
+                if (discardedScenes.Count > 0)
+                {
+                    message += $"; discarded unsaved changes in {discardedScenes.Count} untitled scene(s)";
+                }
+
                 return new JObject
                 {
                     ["success"] = true,
                     ["type"] = "text",
-                    ["message"] = $"Successfully created scene '{sceneName}' at path '{scenePath}'",
-                    ["scenePath"] = scenePath
+                    ["message"] = message,
+                    ["scenePath"] = scenePath,
+                    ["discardedScenes"] = discardedScenes,
+                    ["savedScenes"] = savedScenes
                 };
             }
             catch (Exception ex)

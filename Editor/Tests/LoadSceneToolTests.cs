@@ -83,6 +83,46 @@ namespace McpUnity.Tests
         }
 
         [Test]
+        public void Execute_WithoutDiscard_UntitledDirtyScene_RefusesWithoutSaveDialog()
+        {
+            // Saving this untitled scene would open a modal Save As dialog and hang the test
+            JObject result = _tool.Execute(new JObject
+            {
+                ["scenePath"] = TargetScenePath
+            });
+
+            Assert.IsFalse(result["success"]?.ToObject<bool>() ?? false, result.ToString());
+            Assert.AreEqual("unsaved_changes_error", result["error"]?["type"]?.ToString(), result.ToString());
+            StringAssert.Contains("discardUnsavedChanges", result["error"]?["message"]?.ToString());
+            Assert.IsTrue(string.IsNullOrEmpty(SceneManager.GetActiveScene().path));
+            Assert.IsTrue(SceneManager.GetActiveScene().isDirty);
+            Assert.IsNotNull(GameObject.Find("LoadSceneToolTests_Throwaway"));
+        }
+
+        [Test]
+        public void Execute_WithoutDiscard_SavedDirtyScene_SavesItAndLoads()
+        {
+            Scene saved = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            Assert.IsTrue(EditorSceneManager.SaveScene(saved, SavedScenePath), "Failed to create saved test scene");
+            new GameObject("LoadSceneToolTests_Work");
+            EditorSceneManager.MarkSceneDirty(saved);
+
+            JObject result = _tool.Execute(new JObject
+            {
+                ["scenePath"] = TargetScenePath
+            });
+
+            Assert.IsTrue(result["success"]?.ToObject<bool>() ?? false, result.ToString());
+            Assert.AreEqual(TargetScenePath, SceneManager.GetActiveScene().path);
+            var savedScenes = (JArray)result["savedScenes"];
+            Assert.AreEqual(1, savedScenes.Count);
+            Assert.AreEqual(SavedScenePath, savedScenes[0]["path"]?.ToString());
+
+            EditorSceneManager.OpenScene(SavedScenePath, OpenSceneMode.Single);
+            Assert.IsNotNull(GameObject.Find("LoadSceneToolTests_Work"), "Changes to the saved scene were not saved");
+        }
+
+        [Test]
         public void Execute_DiscardUnsavedChanges_Additive_KeepsOpenScenes()
         {
             Scene throwaway = SceneManager.GetActiveScene();
