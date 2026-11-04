@@ -85,10 +85,10 @@ The following tools are available for manipulating and querying Unity scenes and
 - `create_prefab`: Creates a prefab with optional MonoBehaviour script and serialized field values
   > **Example prompt:** "Create a prefab named 'Player' from the 'PlayerController' script"
 
-- `create_scene`: Creates a new scene and saves it to the specified path
+- `create_scene`: Creates a new scene and saves it to the specified path. Like a non-additive `load_scene`, it saves the open scenes first and refuses (instead of showing a save dialog) when an untitled scene has unsaved changes, unless `discardUnsavedChanges: true`
   > **Example prompt:** "Create a new scene called 'Level1' in the Scenes folder"
 
-- `load_scene`: Loads a scene by path or name, with optional additive loading. Non-additive loads save the open scenes first; pass `discardUnsavedChanges: true` to replace throwaway untitled scenes (e.g. temporary scenes left by `run_tests`) without saving or showing a save dialog. Saved scenes with unsaved changes are never discarded: the load is refused with an error
+- `load_scene`: Loads a scene by path or name, with optional additive loading. Non-additive loads save saved scenes with unsaved changes first and never show a save dialog: if an untitled scene (e.g. a temporary scene left by `run_tests`) has unsaved changes, the load is refused with an error. Pass `discardUnsavedChanges: true` to replace such throwaway untitled scenes without saving. Saved scenes with unsaved changes are never discarded: with that flag the load is refused instead
   > **Example prompt:** "Load the MainMenu scene"
 
 - `delete_scene`: Deletes a scene by path or name and removes it from Build Settings

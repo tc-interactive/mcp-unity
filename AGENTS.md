@@ -152,8 +152,8 @@ If no valid setting is found, Node falls back to:
 - `send_console_log` — Send logs to Unity console
 - `add_asset_to_scene` — Add assets to scene
 - `create_prefab` — Create prefabs with optional scripts
-- `create_scene` — Create and save new scenes
-- `load_scene` — Load scenes (single or additive); `discardUnsavedChanges: true` replaces throwaway untitled scenes without saving (avoids the blocking save dialog for untitled test scenes); it refuses to load if a saved scene has unsaved changes
+- `create_scene` — Create and save new scenes; replaces the open scenes like a non-additive `load_scene` (same unsaved-changes rules and `discardUnsavedChanges`)
+- `load_scene` — Load scenes (single or additive). Non-additive loads never show a Save dialog (`Editor/Utils/OpenScenesGuard.cs`): saved scenes with unsaved changes are saved first; untitled scenes with unsaved changes refuse the load (`unsaved_changes_error`) unless `discardUnsavedChanges: true`, which discards only untitled scenes and refuses if a saved scene has unsaved changes
 - `delete_scene` — Delete scenes and remove from Build Settings
 - `save_scene` — Save current scene (with optional Save As)
 - `get_scene_info` — Get active scene info and loaded scenes list
