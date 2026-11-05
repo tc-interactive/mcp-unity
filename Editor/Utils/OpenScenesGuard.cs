@@ -7,8 +7,9 @@ using McpUnity.Unity;
 namespace McpUnity.Utils
 {
     /// <summary>
-    /// Prepares the open scenes before a tool replaces them (opening or creating a scene in Single mode)
-    /// without ever showing Unity's blocking "Save Scene" dialog.
+    /// Prepares the open scenes before a tool replaces them (opening or creating a scene in Single mode) or runs
+    /// the Test Runner (which asks to save modified scenes first), without ever showing Unity's blocking
+    /// "Save Scene" dialog.
     ///
     /// - Saved scenes with unsaved changes are saved first (they have a path, so no dialog is needed).
     /// - Untitled scenes with unsaved changes (e.g. temporary scenes left by run_tests) would need a Save As
@@ -96,6 +97,63 @@ namespace McpUnity.Utils
                     );
                 }
                 savedScenes.Add(Describe(scene));
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Leaves the open scenes without unsaved changes before something that would otherwise show the blocking
+        /// "Save Scene" dialog without replacing them first, such as the Test Runner. Applies the same rules as
+        /// <see cref="PrepareToReplace"/>, but discards the untitled scenes itself: it closes them when a saved
+        /// scene stays open, and otherwise replaces them with a new empty scene.
+        /// </summary>
+        /// <param name="discardUnsavedChanges">Whether the caller declared the untitled scenes throwaway</param>
+        /// <param name="refusedMessage">Start of the error message when refused, e.g. "Tests were not run"</param>
+        /// <param name="discardedScenes">Untitled scenes whose unsaved changes were discarded</param>
+        /// <param name="savedScenes">Saved scenes that were saved</param>
+        /// <returns>Null when no open scene has unsaved changes anymore, otherwise an error response</returns>
+        public static JObject SaveOrDiscardUnsavedChanges(bool discardUnsavedChanges, string refusedMessage,
+            out JArray discardedScenes, out JArray savedScenes)
+        {
+            JObject refused = PrepareToReplace(discardUnsavedChanges, refusedMessage, out discardedScenes, out savedScenes);
+            if (refused != null || discardedScenes.Count == 0)
+            {
+                return refused;
+            }
+
+            var dirtyUntitled = new List<Scene>();
+            bool keepsSavedScene = false;
+            for (int i = 0; i < SceneManager.sceneCount; i++)
+            {
+                Scene scene = SceneManager.GetSceneAt(i);
+                if (!string.IsNullOrEmpty(scene.path))
+                {
+                    // Closing a scene needs another loaded scene to stay open
+                    keepsSavedScene |= scene.isLoaded;
+                }
+                else if (scene.isDirty)
+                {
+                    dirtyUntitled.Add(scene);
+                }
+            }
+
+            if (!keepsSavedScene)
+            {
+                // Only untitled scenes are open: replacing them in Single mode discards them without a dialog
+                EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+                return null;
+            }
+
+            foreach (Scene scene in dirtyUntitled)
+            {
+                if (!EditorSceneManager.CloseScene(scene, true))
+                {
+                    return McpUnitySocketHandler.CreateErrorResponse(
+                        $"{refusedMessage}: failed to close untitled scene '{scene.name}' to discard its unsaved changes",
+                        "scene_unload_error"
+                    );
+                }
             }
 
             return null;

@@ -73,7 +73,7 @@ The following tools are available for manipulating and querying Unity scenes and
 - `add_package`: Installs new packages in the Unity Package Manager
   > **Example prompt:** "Add the TextMeshPro package to my project"
 
-- `run_tests`: Runs tests using the Unity Test Runner
+- `run_tests`: Runs tests using the Unity Test Runner. The Test Runner asks to save modified scenes before running, so the tool handles them first and never shows that dialog: saved scenes with unsaved changes are saved, and if an untitled scene has unsaved changes the run is refused with an error. Pass `discardUnsavedChanges: true` to discard such throwaway untitled scenes; saved scenes are never discarded
   > **Example prompt:** "Run all the EditMode tests in my project"
 
 - `send_console_log`: Send a console log to Unity

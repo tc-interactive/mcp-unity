@@ -7,12 +7,13 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 
 // Constants for the tool
 const toolName = 'run_tests';
-const toolDescription = 'Runs Unity\'s Test Runner tests';
+const toolDescription = 'Runs Unity\'s Test Runner tests. Never shows the Test Runner\'s Save Scene dialog: saved scenes with unsaved changes are saved first; if an untitled scene has unsaved changes the run is refused unless discardUnsavedChanges is true';
 const paramsSchema = z.object({
   testMode: z.string().optional().default('EditMode').describe('The test mode to run (EditMode or PlayMode) - defaults to EditMode (optional)'),
   testFilter: z.string().optional().default('').describe('The specific test filter to run (e.g. specific test name or class name, must include namespace) (optional)'),
   returnOnlyFailures: z.boolean().optional().default(true).describe('Whether to show only failed tests in the results (optional)'),
-  returnWithLogs: z.boolean().optional().default(false).describe('Whether to return the test logs in the results (optional)')
+  returnWithLogs: z.boolean().optional().default(false).describe('Whether to return the test logs in the results (optional)'),
+  discardUnsavedChanges: z.boolean().optional().default(false).describe('Discard unsaved changes in untitled (never saved) scenes before running, instead of refusing the run. Saved scenes with unsaved changes are saved, never discarded (optional)')
 });
 
 /**
@@ -58,7 +59,8 @@ async function toolHandler(mcpUnity: McpUnity, params: any = {}): Promise<CallTo
     testMode = 'EditMode',
     testFilter = '',
     returnOnlyFailures = true,
-    returnWithLogs = false
+    returnWithLogs = false,
+    discardUnsavedChanges = false
   } = params;
 
   // Create and wait for the test run
@@ -68,7 +70,8 @@ async function toolHandler(mcpUnity: McpUnity, params: any = {}): Promise<CallTo
       testMode,
       testFilter,
       returnOnlyFailures,
-      returnWithLogs
+      returnWithLogs,
+      discardUnsavedChanges
     }
   });
   
@@ -100,6 +103,8 @@ async function toolHandler(mcpUnity: McpUnity, params: any = {}): Promise<CallTo
           passCount,
           failCount,
           skipCount,
+          savedScenes: response.savedScenes || [],
+          discardedScenes: response.discardedScenes || [],
           results: testResults
         }, null, 2)
       }
