@@ -148,7 +148,7 @@ If no valid setting is found, Node falls back to:
 - `update_gameobject` — Update or create GameObject properties
 - `update_component` — Update or add components on GameObjects
 - `add_package` — Install packages via Package Manager (disabled by default; requires `AllowPackageInstallation=true`)
-- `run_tests` — Run Unity Test Runner tests
+- `run_tests` — Run Unity Test Runner tests. The Test Runner would show a Save dialog for modified scenes, so the tool applies the same unsaved-changes rules and `discardUnsavedChanges` as `load_scene` first (`OpenScenesGuard.SaveOrDiscardUnsavedChanges`, which also closes or replaces the discarded untitled scenes itself)
 - `send_console_log` — Send logs to Unity console
 - `add_asset_to_scene` — Add assets to scene
 - `create_prefab` — Create prefabs with optional scripts
